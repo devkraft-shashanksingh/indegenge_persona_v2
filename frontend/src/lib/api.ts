@@ -4,19 +4,10 @@ import type { AnalysisResults } from '@/types/analytics';
 // API configuration - prefer Vite dev proxy for Codespaces compatibility
 const envBase = (import.meta as any).env?.VITE_API_URL as string | undefined;
 
-let baseURL = '';
-if ((import.meta as any).env?.DEV) {
-  // In development, always use Vite proxy for better Codespaces compatibility
-  baseURL = '';
-  console.log('🏠 Development mode: using Vite proxy for API calls');
-} else {
-  if (envBase && envBase.trim()) {
-    baseURL = envBase.trim();
-  } else if (typeof window !== 'undefined') {
-    baseURL = window.location.origin;
-  } else {
-    baseURL = 'http://127.0.0.1:8000';
-  }
+let baseURL = 'http://13.205.99.234:8001';
+
+if (envBase && envBase.trim()) {
+  baseURL = envBase.trim();
 }
 
 console.log('🔧 API baseURL configured as:', baseURL || 'Vite proxy (relative)');
