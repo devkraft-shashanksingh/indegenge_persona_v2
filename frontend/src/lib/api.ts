@@ -162,6 +162,7 @@ export interface ExtractionSummary {
   beliefs_count: number;
   tensions_count: number;
   extraction_method: string;
+  confidence_score?: number;
 }
 
 export interface TranscriptSuggestions {
@@ -188,6 +189,7 @@ export interface TranscriptSuggestions {
   };
   core: Record<string, any>;
   extraction_summary?: ExtractionSummary;
+  missing_info?: string[];
 }
 
 export interface PersonaExport {
