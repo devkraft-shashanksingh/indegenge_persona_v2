@@ -16,7 +16,7 @@ export default defineConfig({
       '/cohorts', '/stats', '/health', '/api', '/simulations', '/crm'
     ].reduce((acc, path) => {
       acc[path] = { 
-        target: 'http://localhost:8000', 
+        target: 'http://13.205.99.234:8001', 
         changeOrigin: true,
         secure: false,
         ws: true
