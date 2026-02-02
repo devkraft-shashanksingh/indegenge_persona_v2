@@ -4,7 +4,7 @@ import type { AnalysisResults } from '@/types/analytics';
 // API configuration - prefer Vite dev proxy for Codespaces compatibility
 const envBase = (import.meta as any).env?.VITE_API_URL as string | undefined;
 
-let baseURL = '';
+let baseURL = 'http://13.205.99.234:8001';
 
 if (envBase && envBase.trim()) {
   baseURL = envBase.trim();
