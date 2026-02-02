@@ -1,16 +1,24 @@
 {
   "rewrites": [
     {
+      "source": "/api/personas",
+      "destination": "http://13.205.99.234:8001/api/personas/"
+    },
+    {
       "source": "/api/personas/:path*",
       "destination": "http://13.205.99.234:8001/api/personas/:path*"
     },
     {
-      "source": "/api/:path*",
-      "destination": "http://13.205.99.234:8001/api/:path*"
-    },
-    {
       "source": "/stats",
       "destination": "http://13.205.99.234:8001/stats"
+    },
+    {
+      "source": "/stats/:path*",
+      "destination": "http://13.205.99.234:8001/stats/:path*"
+    },
+    {
+      "source": "/api/:path*",
+      "destination": "http://13.205.99.234:8001/api/:path*"
     },
     {
       "source": "/cohorts/:path*",

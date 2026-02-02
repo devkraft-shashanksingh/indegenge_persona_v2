@@ -56,12 +56,9 @@ api.interceptors.response.use(
   (response) => {
     console.log('📥 API Response:', {
       status: response.status,
-      statusText: response.statusText,
       url: response.config.url,
-      headers: response.headers,
       dataType: typeof response.data,
-      dataSize: JSON.stringify(response.data).length,
-      timestamp: new Date().toISOString()
+      dataLength: Array.isArray(response.data) ? response.data.length : 'N/A'
     });
 
     if (response.data) {
@@ -70,7 +67,6 @@ api.interceptors.response.use(
         console.log('📥 Individual responses count:', response.data.individual_responses.length);
       }
     }
-
     return response;
   },
   async (error) => {
