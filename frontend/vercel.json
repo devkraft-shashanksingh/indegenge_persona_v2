@@ -1,6 +1,30 @@
 {
   "rewrites": [
     {
+      "source": "/api/:path*",
+      "destination": "http://13.205.99.234:8001/api/:path*"
+    },
+    {
+      "source": "/stats",
+      "destination": "http://13.205.99.234:8001/stats"
+    },
+    {
+      "source": "/cohorts/:path*",
+      "destination": "http://13.205.99.234:8001/cohorts/:path*"
+    },
+    {
+      "source": "/health/:path*",
+      "destination": "http://13.205.99.234:8001/health/:path*"
+    },
+    {
+      "source": "/simulations/:path*",
+      "destination": "http://13.205.99.234:8001/simulations/:path*"
+    },
+    {
+      "source": "/crm/:path*",
+      "destination": "http://13.205.99.234:8001/crm/:path*"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }
