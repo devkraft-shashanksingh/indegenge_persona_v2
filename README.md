@@ -29,6 +29,11 @@ PharmaPersonaSim uses Large Language Models to create dynamic AI personas (patie
 - Configure metrics: sentiment, purchase intent, trust, clarity
 - Real-time LLM-powered analysis with reasoning
 
+### Synthetic Testing
+- Objective scoring of marketing assets against key metrics (1-7 scale)
+- Qualitative feedback generation (What works, Challenges, Considerations)
+- Aggregated insights across multiple personas
+
 ### Analytics Dashboard
 - Individual persona response breakdown
 - Summary statistics and AI-generated insights
@@ -81,7 +86,8 @@ pharmapersonasim/
 │   │   ├── main.py           # FastAPI endpoints
 │   │   ├── models.py         # Database models
 │   │   ├── persona_engine.py # AI persona generation
-│   │   └── cohort_engine.py  # Cohort analysis
+│   │   ├── cohort_engine.py  # Cohort analysis
+│   │   └── synthetic_testing_engine.py # Synthetic testing logic
 │   └── requirements.txt
 ├── frontend/
 │   ├── src/
