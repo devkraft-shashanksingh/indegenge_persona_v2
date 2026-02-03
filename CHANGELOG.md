@@ -31,6 +31,16 @@ All notable changes to PharmaPersonaSim.
 
 - **Frontend: Collapsible UI Component** (`frontend/src/components/ui/collapsible.tsx`)
 
+- **Synthetic Testing Engine** (`backend/app/synthetic_testing_engine.py`)
+  - Objective 1-7 scoring of marketing assets
+  - Qualitative feedback aggregation
+  - Competitive benchmarking against personas
+
+- **Synthetic Testing Workspace** (`frontend/src/components/SyntheticTestingWorkspace.tsx`)
+  - UI for uploading assets and viewing analysis results
+  - Visual charts for "Unmet Need vs. Performance"
+
 ### Changed
+- Refactored **Persona Archetypes** to **Segments** (`backend/app/segments.py`) for better domain alignment
 - Updated presentation slides with new branded imagery
 - Removed old PNG slides in favor of JPG format
