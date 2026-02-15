@@ -600,10 +600,74 @@ def generate_cohort_insights(individual_responses: List[Dict[str, Any]], stimulu
         if 'effectiveness' in concern_text or 'work' in concern_text:
             insights.append("Effectiveness concerns detected - consider providing more efficacy data or testimonials.")
     
+    
     if not insights:
         insights.append("Analysis complete. Consider reviewing individual responses for detailed insights.")
     
     return insights
+
+
+def _process_single_cohort_persona(
+    persona_info: Dict[str, Any],
+    stimulus_text: str,
+    metrics: List[str],
+    questions: Optional[List[str]] = None,
+    metric_weights: Optional[Dict[str, float]] = None
+) -> Dict[str, Any]:
+    """Helper function to process a single persona in a worker thread.
+    
+    Args:
+        persona_info: Dict containing stripped persona attributes (no ORM objects)
+        stimulus_text: The evaluation text
+        metrics: List of metrics to evaluate
+        questions: Optional list of qualitative questions
+        metric_weights: Optional weights for metrics
+    """
+    try:
+        # Extract basic info
+        persona_id = persona_info['id']
+        persona_name = persona_info['name']
+        persona_json_str = persona_info.get('full_persona_json')
+        
+        # Parse JSON
+        try:
+            persona_data = json.loads(persona_json_str) if persona_json_str else {}
+        except Exception:
+            persona_data = {}
+            
+        # Determine type
+        local_type = persona_info.get('persona_type') or persona_data.get('persona_type') or "Patient"
+        
+        # Run analysis (synchronous call to LLM)
+        analysis_result = analyze_persona_response(
+            persona_data,
+            local_type,
+            stimulus_text,
+            metrics,
+            questions,
+            metric_weights=metric_weights,
+        )
+        
+        # Return structured result
+        return {
+            'persona_id': persona_id,
+            'persona_name': persona_name,
+            'avatar_url': persona_info.get('avatar_url'),
+            'persona_type': local_type,
+            'responses': analysis_result['responses'],
+            'reasoning': analysis_result['reasoning'],
+            'answers': analysis_result.get('answers')
+        }
+    except Exception as e:
+        logger.error(f"Error processing persona {persona_info.get('name', 'Unknown')}: {e}")
+        return {
+            'persona_id': persona_info.get('id'),
+            'persona_name': persona_info.get('name', 'Unknown'),
+            'error': str(e),
+            'responses': {},
+            'reasoning': f"Error during processing: {str(e)}",
+            'answers': []
+        }
 
 def run_cohort_analysis(
     persona_ids: List[int],
@@ -636,33 +700,46 @@ def run_cohort_analysis(
     preamble_text = generate_tool_preamble(len(personas), metrics, stimulus_text)
 
     # Analyze each persona's response
-    individual_responses = []
+    # Prepare persona data for parallel processing to avoid ORM/Threading issues
+    persona_dicts = []
     for persona in personas:
-        # Parse the JSON string to get the persona data
-        try:
-            persona_data = json.loads(persona.full_persona_json) if persona.full_persona_json else {}
-        except json.JSONDecodeError as e:
-            logger.warning(f"Failed to parse persona JSON for {persona.name} (ID: {persona.id}): {e}")
-            persona_data = {}
-        persona_type = getattr(persona, "persona_type", None) or persona_data.get("persona_type") or "Patient"
-        analysis_result = analyze_persona_response(
-            persona_data,
-            persona_type,
-            stimulus_text,
-            metrics,
-            questions,
-            metric_weights=metric_weights,
-        )
-
-        individual_responses.append({
-            'persona_id': persona.id,
-            'persona_name': persona.name,
-            'avatar_url': getattr(persona, 'avatar_url', None),
-            'persona_type': persona_type,
-            'responses': analysis_result['responses'],
-            'reasoning': analysis_result['reasoning'],
-            'answers': analysis_result.get('answers')
+        persona_dicts.append({
+            "id": persona.id,
+            "name": persona.name,
+            "full_persona_json": persona.full_persona_json,
+            "persona_type": getattr(persona, "persona_type", None),
+            "avatar_url": getattr(persona, 'avatar_url', None)
         })
+
+    # Analyze each persona's response in parallel
+    individual_responses = []
+    
+    # Use ThreadPoolExecutor for parallel processing
+    # Max workers capped at 10 to avoid hitting rate limits too hard/fast
+    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+        future_to_persona = {
+            executor.submit(
+                _process_single_cohort_persona, 
+                p_dict, 
+                stimulus_text, 
+                metrics, 
+                questions, 
+                metric_weights
+            ): p_dict['id'] 
+            for p_dict in persona_dicts
+        }
+        
+        for future in concurrent.futures.as_completed(future_to_persona):
+            try:
+                result = future.result()
+                individual_responses.append(result)
+            except Exception as exc:
+                logger.error(f"Persona processing generated an exception: {exc}")
+    
+    # Sort responses to match original order (optional, but good for UX)
+    # We use a map of ID -> index from the original list
+    id_to_index = {p.id: i for i, p in enumerate(personas)}
+    individual_responses.sort(key=lambda x: id_to_index.get(x.get('persona_id'), 0))
     
     # Calculate summary statistics
     summary_stats = calculate_summary_statistics(individual_responses, metrics)

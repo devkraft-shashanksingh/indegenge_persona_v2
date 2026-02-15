@@ -9,7 +9,7 @@ import os
 import threading
 from typing import Optional
 from dotenv import load_dotenv
-from openai import OpenAI
+from openai import OpenAI, AsyncOpenAI
 
 # Load environment variables from the backend folder
 backend_dir = os.path.dirname(os.path.dirname(__file__))
@@ -23,7 +23,9 @@ MODEL_NAME = os.getenv("OPENAI_MODEL", "gpt-5.2")
 # instantiation, so we create the client lazily to avoid raising an exception
 # when the key is absent (for example in local development or during unit tests).
 _openai_client: Optional[OpenAI] = None
+_async_openai_client: Optional[AsyncOpenAI] = None
 _client_lock = threading.Lock()
+_async_client_lock = threading.Lock()
 
 
 def get_openai_client() -> Optional[OpenAI]:
@@ -42,3 +44,20 @@ def get_openai_client() -> Optional[OpenAI]:
             _openai_client = OpenAI(api_key=api_key)
 
     return _openai_client
+
+def get_async_openai_client() -> Optional[AsyncOpenAI]:
+    """Return a configured AsyncOpenAI client if an API key is available.
+    
+    This function is thread-safe and caches the client instance for reuse.
+    Returns None if OPENAI_API_KEY is not set in the environment.
+    """
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        return None
+
+    global _async_openai_client
+    with _async_client_lock:
+        if _async_openai_client is None:
+            _async_openai_client = AsyncOpenAI(api_key=api_key)
+
+    return _async_openai_client

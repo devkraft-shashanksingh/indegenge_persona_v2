@@ -3,46 +3,31 @@
 import React, { useState, useEffect } from "react"
 import { useNavigate, useSearchParams } from "react-router-dom"
 import { PersonasAPI, BrandsAPI, ChatAPI } from "@/lib/api"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "../components/ui/card"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card"
 import { Button } from "../components/ui/button"
 import { Input } from "../components/ui/input"
 import { Label } from "../components/ui/label"
 import { Textarea } from "../components/ui/textarea"
 import { Badge } from "../components/ui/badge"
 import { Separator } from "../components/ui/separator"
-import { Skeleton } from "../components/ui/skeleton"
+
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select"
 import { ScrollArea } from "../components/ui/scroll-area"
 import { Checkbox } from "../components/ui/checkbox"
 import { Slider } from "../components/ui/slider"
-import { VeevaCRMImporter } from "../components/VeevaCRMImporter"
+
 import {
   User,
   MapPin,
-  Heart,
   Loader2,
   Plus,
   Users,
-  Activity,
   Search,
-  Calendar,
-  Globe,
-  Sparkles,
   Brain,
-  Target,
-  Star,
-  TrendingUp,
-  Shield,
-  Clock,
-  Award,
-  Zap,
   CheckCircle,
-  Copy,
   Settings,
   Wand2,
-  UserPlus,
   X,
-  Database,
   Trash2,
   Library,
   GitCompare,
@@ -391,15 +376,23 @@ export function PersonaLibrary() {
     })
   }, [personas, searchTerm, filters])
 
-  const uniqueConditions = Array.from(new Set(personas.map(p => (p.condition || "").trim()))).filter(Boolean).sort()
-  const uniqueGenders = Array.from(new Set(personas.map(p => (p.gender || "").trim()))).filter(Boolean).sort()
-  const activeFiltersCount = (filters.personaTypes.length > 0 ? 1 : 0) + (filters.genders.length > 0 ? 1 : 0) +
-    (filters.conditions.length > 0 ? 1 : 0) + (filters.ageRange[0] !== DEFAULT_AGE_RANGE[0] || filters.ageRange[1] !== DEFAULT_AGE_RANGE[1] ? 1 : 0)
+  const activeFiltersCount = React.useMemo(() => {
+    let count = 0
+    if (searchTerm.trim()) count++
+    if (filters.personaTypes.length > 0) count++
+    if (filters.genders.length > 0) count++
+    if (filters.conditions.length > 0) count++
+    if (filters.locations.length > 0) count++
+    if (filters.ageRange[0] !== DEFAULT_AGE_RANGE[0] || filters.ageRange[1] !== DEFAULT_AGE_RANGE[1]) count++
+    return count
+  }, [searchTerm, filters])
 
-  const getBrandName = (brandId: number | undefined) => {
-    if (!brandId) return null
-    return brands.find(b => b.id === brandId)?.name || null
-  }
+  const uniqueGenders = React.useMemo(() => {
+    const genders = new Set(personas.map(p => p.gender).filter(Boolean))
+    return Array.from(genders)
+  }, [personas])
+
+
 
   const addBulkTemplate = () => {
     setBulkTemplates([...bulkTemplates, { id: Date.now().toString(), age: "", gender: "", condition: "", location: "", concerns: "" }])
@@ -462,7 +455,7 @@ export function PersonaLibrary() {
             </span>
           </div>
           <Button
-            onClick={() => navigate('/persona-builder')}
+            onClick={() => navigate('/create-persona')}
             className="bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-700 hover:to-purple-700 text-white"
           >
             <Brain className="h-4 w-4 mr-2" />
@@ -801,15 +794,6 @@ export function PersonaLibrary() {
                 </div>
               </div>
               <div className="p-4">
-                <VeevaCRMImporter
-                  onImportComplete={() => { fetchPersonas(); setWorkspaceMode("browse"); }}
-                  trigger={
-                    <Button variant="outline" className="w-full h-auto py-3 flex flex-col items-center gap-2 border-2 border-dashed border-blue-300 hover:border-blue-500 hover:bg-blue-50">
-                      <Database className="h-5 w-5 text-blue-600" />
-                      <span className="text-blue-600 text-sm">Import from CRM</span>
-                    </Button>
-                  }
-                />
               </div>
             </aside>
 

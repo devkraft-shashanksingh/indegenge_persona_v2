@@ -1,8 +1,9 @@
 "use client"
 
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect, useMemo, useRef } from "react"
 import { PersonasAPI, CohortAPI, AssetIntelligenceAPI, PanelFeedbackAPI, type AssetAnalysisResult, type AssetHistoryItem, type PanelFeedbackResponse } from "@/lib/api"
 import { metricRegistry } from "@/lib/metricsRegistry"
+import { useToast } from "@/components/ui/use-toast"
 
 import { AssetIntelligenceWorkspace } from "@/components/AssetIntelligenceWorkspace"
 import { SyntheticTestingWorkspace } from "@/components/SyntheticTestingWorkspace"
@@ -25,13 +26,12 @@ import {
   Search,
   Sparkles,
   Users,
-  BarChart3,
-  Target,
+
   MessageSquare,
   PlayCircle,
   Plus,
   Gauge,
-  FileText,
+
   Loader2,
   ImageIcon,
   Upload,
@@ -91,8 +91,8 @@ export function SimulationHub() {
   const [stimulusImages, setStimulusImages] = useState<File[]>([])
   const [imagePreviews, setImagePreviews] = useState<string[]>([])
   const [contentType, setContentType] = useState<"text" | "image" | "both">("text")
-  const [questions, setQuestions] = useState<string[]>([])
-  const [loading, setLoading] = useState(false)
+  const [questions, setQuestions] = useState<{ id: string; text: string }[]>([])
+
   const [analyzing, setAnalyzing] = useState(false)
   const [searchTerm, setSearchTerm] = useState("")
 
@@ -107,6 +107,11 @@ export function SimulationHub() {
   const [recruitmentMode, setRecruitmentMode] = useState<"manual" | "ai">("manual")
   const [recruitmentPrompt, setRecruitmentPrompt] = useState("")
   const [isRecruiting, setIsRecruiting] = useState(false)
+  const { toast } = useToast()
+
+  // Refs
+  const stimulusInputRef = useRef<HTMLInputElement>(null)
+  const panelInputRef = useRef<HTMLInputElement>(null)
 
 
 
@@ -170,7 +175,11 @@ export function SimulationHub() {
       const recruitedPersonas = await PersonasAPI.recruit(recruitmentPrompt)
 
       if (recruitedPersonas.length === 0) {
-        alert(`No personas found matching: "${recruitmentPrompt}"\n\nTry adjusting your search criteria.`)
+        toast({
+          title: "No Match Found",
+          description: `No personas found matching: "${recruitmentPrompt}"`,
+          variant: "destructive"
+        })
         return
       }
 
@@ -184,19 +193,20 @@ export function SimulationHub() {
         ? `${Math.min(...recruitedPersonas.map((p: Persona) => p.age))}-${Math.max(...recruitedPersonas.map((p: Persona) => p.age))}`
         : 'N/A'
 
-      alert(
-        `✅ Recruitment Complete!\n\n` +
-        `Found and selected ${recruitedPersonas.length} personas:\n` +
-        `• Genders: ${genders.join(', ')}\n` +
-        `• Age range: ${ageRange}\n` +
-        `• Total selected: ${newSelected.size}`
-      )
+      toast({
+        title: "Recruitment Complete",
+        description: `Found ${recruitedPersonas.length} personas. Genders: ${genders.join(', ')}. Age range: ${ageRange}.`,
+      })
 
       // Clear the prompt after successful recruitment
       setRecruitmentPrompt("")
     } catch (error) {
       console.error("Recruitment failed", error)
-      alert("❌ Recruitment Failed\n\nCould not recruit personas. Please check your connection and try again.")
+      toast({
+        title: "Recruitment Failed",
+        description: "Could not recruit personas. Please check your connection and try again.",
+        variant: "destructive"
+      })
     } finally {
       setIsRecruiting(false)
     }
@@ -310,14 +320,11 @@ export function SimulationHub() {
 
 
   const fetchPersonas = async () => {
-    setLoading(true)
     try {
       const data = await PersonasAPI.list()
       setPersonas(data)
     } catch (error) {
       console.error("Error fetching personas:", error)
-    } finally {
-      setLoading(false)
     }
   }
 
@@ -381,14 +388,18 @@ export function SimulationHub() {
 
   const addQuestion = (text: string = "") => {
     if (questions.length >= MAX_QUESTIONS) {
-      alert(`You can add up to ${MAX_QUESTIONS} questions.`)
+      toast({
+        title: "Limit Reached",
+        description: `You can add up to ${MAX_QUESTIONS} questions.`,
+        variant: "destructive"
+      })
       return
     }
-    setQuestions((prev) => [...prev, text])
+    setQuestions((prev) => [...prev, { id: crypto.randomUUID(), text }])
   }
 
-  const removeQuestion = (index: number) => {
-    setQuestions((prev) => prev.filter((_, i) => i !== index))
+  const removeQuestion = (id: string) => {
+    setQuestions((prev) => prev.filter((q) => q.id !== id))
   }
 
   const removeImage = (index: number) => {
@@ -401,7 +412,11 @@ export function SimulationHub() {
     if (!files || files.length === 0) return
     const file = files[0]
     if (!file.type.startsWith('image/')) {
-      alert('Please upload an image file')
+      toast({
+        title: "Invalid File",
+        description: "Please upload an image file",
+        variant: "destructive"
+      })
       return
     }
     setAssetFile(file)
@@ -415,11 +430,19 @@ export function SimulationHub() {
 
   const handleAssetAnalysis = async () => {
     if (!assetFile) {
-      alert('Please upload an asset image first')
+      toast({
+        title: "Missing Asset",
+        description: "Please upload an asset image first",
+        variant: "destructive"
+      })
       return
     }
     if (selectedPersonas.size === 0) {
-      alert('Please select at least one persona')
+      toast({
+        title: "No Personas Selected",
+        description: "Please select at least one persona",
+        variant: "destructive"
+      })
       return
     }
 
@@ -453,7 +476,11 @@ export function SimulationHub() {
       setAssetAnalysisResults(response.results)
     } catch (error) {
       console.error('❌ Asset analysis failed:', error)
-      alert(`Asset analysis failed: ${String(error)}`)
+      toast({
+        title: "Analysis Failed",
+        description: `Asset analysis failed: ${String(error)}`,
+        variant: "destructive"
+      })
     } finally {
       setAssetAnalyzing(false)
     }
@@ -508,7 +535,11 @@ export function SimulationHub() {
   // Panel Feedback handler
   const handlePanelFeedback = async () => {
     if (selectedPersonas.size === 0) {
-      alert('Please select at least one persona')
+      toast({
+        title: "No Personas Selected",
+        description: "Please select at least one persona",
+        variant: "destructive"
+      })
       return
     }
 
@@ -516,7 +547,11 @@ export function SimulationHub() {
     const hasImages = panelImages.length > 0
 
     if (!hasText && !hasImages) {
-      alert('Please enter marketing content or upload an image to analyze')
+      toast({
+        title: "Missing Content",
+        description: "Please enter marketing content or upload an image to analyze",
+        variant: "destructive"
+      })
       return
     }
 
@@ -570,7 +605,11 @@ export function SimulationHub() {
       setPanelFeedbackResults(response)
     } catch (error) {
       console.error('❌ Panel feedback failed:', error)
-      alert(`Panel feedback failed: ${String(error)}`)
+      toast({
+        title: "Feedback Failed",
+        description: `Panel feedback failed: ${String(error)}`,
+        variant: "destructive"
+      })
     } finally {
       setPanelFeedbackLoading(false)
     }
@@ -578,25 +617,43 @@ export function SimulationHub() {
 
 
 
+
+
   const handleRunAnalysis = async () => {
     if (selectedPersonas.size === 0) {
-      alert("Please select at least one persona")
+      toast({
+        title: "No Personas",
+        description: "Please select at least one persona",
+        variant: "destructive"
+      })
       return
     }
 
-    const trimmedQuestions = questions.map((q) => q.trim()).filter((q) => q.length > 0)
+    const trimmedQuestions = questions.map((q) => q.text.trim()).filter((q) => q.length > 0)
 
-    if (questions.some((q) => q.trim().length === 0) && questions.length > 0) {
-      alert("Please fill in all questions or remove empty ones.")
+    if (questions.some((q) => q.text.trim().length === 0) && questions.length > 0) {
+      toast({
+        title: "Empty Questions",
+        description: "Please fill in all questions or remove empty ones.",
+        variant: "destructive"
+      })
       return
     }
 
     if (trimmedQuestions.length > MAX_QUESTIONS) {
-      alert(`Please limit qualitative questions to ${MAX_QUESTIONS}.`)
+      toast({
+        title: "Too Many Questions",
+        description: `Please limit qualitative questions to ${MAX_QUESTIONS}.`,
+        variant: "destructive"
+      })
       return
     }
     if (selectedMetrics.size === 0) {
-      alert("Please select at least one metric")
+      toast({
+        title: "No Metrics",
+        description: "Please select at least one metric",
+        variant: "destructive"
+      })
       return
     }
 
@@ -605,15 +662,27 @@ export function SimulationHub() {
     const hasImages = stimulusImages.length > 0
 
     if (contentType === "text" && !hasText) {
-      alert("Please enter stimulus text")
+      toast({
+        title: "Missing Text",
+        description: "Please enter stimulus text",
+        variant: "destructive"
+      })
       return
     }
     if (contentType === "image" && !hasImages) {
-      alert("Please upload at least one image")
+      toast({
+        title: "Missing Image",
+        description: "Please upload at least one image",
+        variant: "destructive"
+      })
       return
     }
     if (contentType === "both" && (!hasText || !hasImages)) {
-      alert("Please provide both text and images for analysis")
+      toast({
+        title: "Missing Content",
+        description: "Please provide both text and images for analysis",
+        variant: "destructive"
+      })
       return
     }
 
@@ -691,27 +760,27 @@ export function SimulationHub() {
       }
 
 
-      setTimeout(() => {
-        console.log("🧭 Navigating to analytics with data:", {
-          cohort_size: response.cohort_size,
-          responses_count: response.individual_responses.length,
-        })
-        navigate("/analytics", {
-          state: {
-            analysisResults: response,
-            originalImages: stimulusImages, // Pass original images for improvement
-            contentType: contentType
-          }
-        })
-      }, 500)
+      console.log("🧭 Navigating to analytics with data:", {
+        cohort_size: response.cohort_size,
+        responses_count: response.individual_responses.length,
+      })
+
+      navigate("/analytics", {
+        state: {
+          analysisResults: response,
+          originalImages: stimulusImages, // Pass original images for improvement
+          contentType: contentType
+        }
+      })
+
     } catch (error) {
       console.error("❌ Error running analysis:", error)
-      console.error("❌ Error type:", typeof error)
-      console.error("❌ Error string:", String(error))
-
-      // Try to extract useful info from the error
       const errorStr = String(error)
-      alert(`Error running analysis: ${errorStr}\n\nCheck browser console for details.`)
+      toast({
+        title: "Analysis Error",
+        description: `Error running analysis: ${errorStr}`,
+        variant: "destructive"
+      })
     } finally {
       setAnalyzing(false)
     }
@@ -913,12 +982,13 @@ export function SimulationHub() {
                       variant="outline"
                       size="sm"
                       className="h-8 text-xs"
-                      onClick={() => document.getElementById('panel-image-upload')?.click()}
+                      onClick={() => panelInputRef.current?.click()}
                     >
                       <Upload className="h-3 w-3 mr-2" />
                       Add Images
                     </Button>
                     <input
+                      ref={panelInputRef}
                       id="panel-image-upload"
                       type="file"
                       multiple
@@ -1203,10 +1273,18 @@ export function SimulationHub() {
                           {(contentType === "both") && <Separator />}
                           <div className="p-6 bg-muted/20 space-y-4">
                             <div
-                              onClick={() => document.getElementById('sim-img-upload')?.click()}
+                              onClick={() => stimulusInputRef.current?.click()}
                               className="border-2 border-dashed border-muted-foreground/20 rounded-xl p-8 text-center hover:bg-background/50 hover:border-primary/40 transition-all cursor-pointer"
                             >
-                              <input id="sim-img-upload" type="file" multiple accept="image/*" className="hidden" onChange={(e) => handleImageUpload(e.target.files)} />
+                              <input
+                                ref={stimulusInputRef}
+                                id="sim-img-upload"
+                                type="file"
+                                multiple
+                                accept="image/*"
+                                className="hidden"
+                                onChange={(e) => handleImageUpload(e.target.files)}
+                              />
                               <div className="mx-auto w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-3 text-primary">
                                 <Upload className="h-6 w-6" />
                               </div>
@@ -1300,9 +1378,9 @@ export function SimulationHub() {
                     </div>
                     <div className="bg-card border rounded-lg p-4 space-y-3">
                       {questions.map((q, idx) => (
-                        <div key={idx} className="flex gap-2">
-                          <Input value={q} readOnly className="h-9 bg-muted/50" />
-                          <Button variant="ghost" size="icon" className="h-9 w-9 text-muted-foreground" onClick={() => removeQuestion(idx)}>
+                        <div key={q.id} className="flex gap-2">
+                          <Input value={q.text} readOnly className="h-9 bg-muted/50" />
+                          <Button variant="ghost" size="icon" className="h-9 w-9 text-muted-foreground" onClick={() => removeQuestion(q.id)}>
                             <X className="h-4 w-4" />
                           </Button>
                         </div>

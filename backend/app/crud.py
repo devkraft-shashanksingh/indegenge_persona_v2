@@ -472,7 +472,8 @@ def get_brands(db: Session, skip: int = 0, limit: int = 100):
 def create_brand_document(db: Session, document: schemas.BrandDocumentCreate):
     data = document.dict()
     # Remove fields not in the model
-    data.pop('filepath', None)
+    data = document.dict()
+    # Remove fields not in the model
     data.pop('summary', None)
     
     db_document = models.BrandDocument(**data)

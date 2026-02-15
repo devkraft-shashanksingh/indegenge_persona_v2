@@ -3,8 +3,9 @@
 import { useState, useEffect } from "react"
 import { BrandsAPI } from "@/lib/api"
 import { KnowledgeGraphWorkspace } from "@/components/KnowledgeGraphWorkspace"
+import { KnowledgeFactsView } from "@/components/KnowledgeFactsView"
 import { NodeMergePanel } from "@/components/NodeMergePanel"
-import { Network, AlertCircle, Settings2, ShieldCheck, ChevronRight, Loader2 } from "lucide-react"
+import { Network, AlertCircle, Settings2, BookOpen, ChevronRight, Loader2, Library } from "lucide-react"
 import {
     Select,
     SelectContent,
@@ -25,7 +26,7 @@ export function KnowledgeGraphPage() {
     const [brands, setBrands] = useState<Brand[]>([])
     const [selectedBrandId, setSelectedBrandId] = useState<string>("")
     const [loading, setLoading] = useState(true)
-    const [activeTab, setActiveTab] = useState<'graph' | 'admin'>('graph')
+    const [activeTab, setActiveTab] = useState<'facts' | 'graph' | 'admin'>('facts')
 
     useEffect(() => {
         fetchBrands()
@@ -75,9 +76,9 @@ export function KnowledgeGraphPage() {
                 <div className="flex items-center gap-4">
                     <div className="flex items-center gap-2 text-violet-600 font-semibold text-lg">
                         <div className="bg-violet-100 p-1.5 rounded-lg">
-                            <Network className="h-4 w-4" />
+                            <BookOpen className="h-4 w-4" />
                         </div>
-                        Knowledge Graph
+                        Evidence Bank
                     </div>
 
                     <div className="h-6 w-px bg-border/60" />
@@ -98,11 +99,15 @@ export function KnowledgeGraphPage() {
                 </div>
 
                 <div className="flex items-center gap-4">
-                    <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'graph' | 'admin')} className="h-9">
+                    <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'facts' | 'graph' | 'admin')} className="h-9">
                         <TabsList className="h-9 bg-muted/50 p-1">
+                            <TabsTrigger value="facts" className="h-7 text-xs px-3 data-[state=active]:bg-white data-[state=active]:text-violet-700 data-[state=active]:shadow-sm">
+                                <Library className="h-3 w-3 mr-1.5" />
+                                Facts & Evidence
+                            </TabsTrigger>
                             <TabsTrigger value="graph" className="h-7 text-xs px-3 data-[state=active]:bg-white data-[state=active]:text-violet-700 data-[state=active]:shadow-sm">
                                 <Network className="h-3 w-3 mr-1.5" />
-                                Visualization
+                                Graph Explorer
                             </TabsTrigger>
                             <TabsTrigger value="admin" className="h-7 text-xs px-3 data-[state=active]:bg-white data-[state=active]:text-indigo-700 data-[state=active]:shadow-sm">
                                 <Settings2 className="h-3 w-3 mr-1.5" />
@@ -116,29 +121,37 @@ export function KnowledgeGraphPage() {
             {/* Main Content Area */}
             <div className="flex-1 overflow-hidden relative">
                 {selectedBrandId ? (
-                    activeTab === 'graph' ? (
-                        <div className="h-full w-full">
-                            <KnowledgeGraphWorkspace
+                    <>
+                        <div className={`h-full w-full ${activeTab === 'facts' ? 'block' : 'hidden'}`}>
+                            <KnowledgeFactsView
                                 brandId={parseInt(selectedBrandId)}
                                 brandName={selectedBrand?.name}
                             />
                         </div>
-                    ) : (
-                        <div className="h-full w-full overflow-y-auto bg-slate-50/50 dark:bg-slate-950/50 p-6">
-                            <div className="max-w-6xl mx-auto space-y-6">
-                                <div className="flex items-center justify-between">
-                                    <div>
-                                        <h2 className="text-2xl font-bold tracking-tight">Graph Data Management</h2>
-                                        <p className="text-muted-foreground">Review duplicate insights and optimize graph topology</p>
-                                    </div>
-                                    <Button variant="outline" size="sm" onClick={() => setActiveTab('graph')}>
-                                        Return to Graph <ChevronRight className="h-4 w-4 ml-1" />
-                                    </Button>
-                                </div>
-                                <NodeMergePanel brandId={parseInt(selectedBrandId)} />
+
+                        {activeTab === 'graph' && (
+                            <div className="h-full w-full">
+                                <KnowledgeGraphWorkspace
+                                    brandId={parseInt(selectedBrandId)}
+                                    brandName={selectedBrand?.name}
+                                />
                             </div>
-                        </div>
-                    )
+                        )}
+
+                        {activeTab === 'admin' && (
+                            <div className="h-full w-full overflow-y-auto bg-slate-50/50 dark:bg-slate-950/50 p-6">
+                                <div className="max-w-6xl mx-auto space-y-6">
+                                    <div className="flex items-center justify-between">
+                                        <div>
+                                            <h2 className="text-2xl font-bold tracking-tight">Graph Data Management</h2>
+                                            <p className="text-muted-foreground">Review duplicate insights and optimize graph topology</p>
+                                        </div>
+                                    </div>
+                                    <NodeMergePanel brandId={parseInt(selectedBrandId)} />
+                                </div>
+                            </div>
+                        )}
+                    </>
                 ) : (
                     <div className="flex items-center justify-center h-full text-muted-foreground">
                         <Loader2 className="h-8 w-8 animate-spin" />

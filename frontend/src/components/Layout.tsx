@@ -9,13 +9,12 @@ import {
   UserPlus,
   Users,
   Library,
-  Sparkles,
   ChevronRight,
-  PieChart,
-  CheckCircle2,
-  ChevronDown,
   ChevronUp,
+  ChevronDown,
+  CheckCircle2,
   Network,
+  BookOpen,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -39,28 +38,16 @@ const navigation = [
     icon: Users,
   },
   {
-    name: 'Persona Builder',
-    description: 'Deep-dive persona creation',
-    href: '/persona-builder',
-    icon: Sparkles,
-  },
-  {
-    name: 'Persona Coverage',
-    description: 'Quick view for marketers',
-    href: '/coverage',
-    icon: PieChart,
-  },
-  {
     name: 'Brand Library',
     description: 'Brand knowledge & assets',
     href: '/brand-library',
     icon: Library,
   },
   {
-    name: 'Knowledge Graph',
-    description: 'Visualize insights',
+    name: 'Evidence Bank',
+    description: 'Verified facts & insights',
     href: '/knowledge-graph',
-    icon: Network,
+    icon: BookOpen,
   },
   {
     name: 'Simulation Hub',
@@ -91,11 +78,6 @@ const guidedFlow = [
     title: 'Persona Library',
     description: 'Manage and compare personas in the library.',
     href: '/personas',
-  },
-  {
-    title: 'Check coverage & gaps',
-    description: 'Use Persona Coverage to spot priority segments.',
-    href: '/coverage',
   },
   {
     title: 'Run simulations',
@@ -151,7 +133,7 @@ export function Layout() {
             </div>
           </div>
           <div className="mt-3 flex items-center gap-1.5 text-white/60 text-xs">
-            <Sparkles className="h-3 w-3" />
+            <Activity className="h-3 w-3" />
             <span>Powered by Indegene</span>
           </div>
         </div>

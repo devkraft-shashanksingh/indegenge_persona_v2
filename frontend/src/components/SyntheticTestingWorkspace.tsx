@@ -1,12 +1,13 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
+import { useToast } from "@/components/ui/use-toast";
 import {
     Upload, X, PlayCircle, Loader2, Gauge,
     BarChart3, AlertCircle, CheckCircle2,
-    ChevronDown, ChevronUp, Maximize2, Edit2, Save, History, FolderOpen
+    Edit2, Save, FolderOpen
 } from 'lucide-react';
 import {
     ScatterChart, Scatter, XAxis, YAxis, CartesianGrid,
-    Tooltip, ResponsiveContainer, ZAxis, Cell, Legend
+    Tooltip, ResponsiveContainer, ZAxis, Cell
 } from 'recharts';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -21,7 +22,6 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import {
     SyntheticTestingAPI,
     type SyntheticTestingResponse,
-    type SyntheticResultItem,
     type SyntheticTestRun
 } from '@/lib/api';
 import { ComparativeAnalysisTable } from './ComparativeAnalysisTable';
@@ -36,16 +36,17 @@ interface Asset {
 
 interface SyntheticTestingWorkspaceProps {
     selectedPersonaIds: number[];
-    allPersonas: any[]; // Full persona objects
+    allPersonas?: any[]; // Full persona objects (Unused)
 }
 
 export function SyntheticTestingWorkspace({
-    selectedPersonaIds,
-    allPersonas
+    selectedPersonaIds
 }: SyntheticTestingWorkspaceProps) {
     const [assets, setAssets] = useState<Asset[]>([]);
     const [isAnalyzing, setIsAnalyzing] = useState(false);
     const [results, setResults] = useState<SyntheticTestingResponse | null>(null);
+    const { toast } = useToast();
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
     // Persistence State
     const [savedRuns, setSavedRuns] = useState<SyntheticTestRun[]>([]);
@@ -91,10 +92,17 @@ export function SyntheticTestingWorkspace({
             setSaveDialogOpen(false);
             setRunName("");
             loadHistory();
-            alert("Run saved successfully!");
+            toast({
+                title: "Run Saved",
+                description: "Test run saved successfully.",
+            });
         } catch (e) {
             console.error("Failed to save run", e);
-            alert("Failed to save run.");
+            toast({
+                title: "Save Failed",
+                description: "Failed to save test run.",
+                variant: "destructive"
+            });
         }
     };
 
@@ -124,12 +132,15 @@ export function SyntheticTestingWorkspace({
     const handleFileUpload = (files: FileList | null) => {
         if (!files) return;
 
-        const newAssets: Asset[] = [];
         const remainingSlots = 3 - assets.length;
         const filesToProcess = Array.from(files).slice(0, remainingSlots);
 
         if (filesToProcess.length === 0) {
-            alert("Maximum 3 assets allowed.");
+            toast({
+                title: "Limit Reached",
+                description: "Maximum 3 assets allowed.",
+                variant: "destructive"
+            });
             return;
         }
 
@@ -189,7 +200,11 @@ export function SyntheticTestingWorkspace({
             setResults(response);
         } catch (error) {
             console.error("Analysis failed:", error);
-            alert("Analysis failed. See console for details.");
+            toast({
+                title: "Analysis Failed",
+                description: "Analysis failed. See console for details.",
+                variant: "destructive"
+            });
         } finally {
             setIsAnalyzing(false);
         }
@@ -301,7 +316,7 @@ export function SyntheticTestingWorkspace({
                             </div>
 
                             <div className="grid gap-3">
-                                {assets.map((asset, idx) => (
+                                {assets.map((asset) => (
                                     <div key={asset.id} className="relative group border rounded-lg p-2 bg-slate-50 dark:bg-slate-800 flex gap-3 items-center">
                                         <div className="h-12 w-12 shrink-0 bg-white rounded border overflow-hidden">
                                             {asset.preview ? (
@@ -331,10 +346,18 @@ export function SyntheticTestingWorkspace({
 
                                 {assets.length < 3 && (
                                     <div
-                                        onClick={() => document.getElementById('syn-upload')?.click()}
+                                        onClick={() => fileInputRef.current?.click()}
                                         className="border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-lg p-4 text-center hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer transition-colors"
                                     >
-                                        <input id="syn-upload" type="file" accept="image/*" className="hidden" multiple onChange={(e) => handleFileUpload(e.target.files)} />
+                                        <input
+                                            ref={fileInputRef}
+                                            id="syn-upload"
+                                            type="file"
+                                            accept="image/*"
+                                            className="hidden"
+                                            multiple
+                                            onChange={(e) => handleFileUpload(e.target.files)}
+                                        />
                                         <Upload className="h-5 w-5 mx-auto text-slate-400 mb-1" />
                                         <span className="text-xs font-medium text-slate-500">Add Concept</span>
                                     </div>
@@ -511,7 +534,7 @@ export function SyntheticTestingWorkspace({
                                         />
                                         {/* Legend removed to avoid confusion with "Black Dot" */}
                                         <Scatter name="Assets" data={chartData} shape={<CustomScatterShape />}>
-                                            {chartData.map((entry, index) => (
+                                            {chartData.map((_, index) => (
                                                 <Cell key={`cell-${index}`} fill={['#8884d8', '#82ca9d', '#ffc658'][index % 3]} />
                                             ))}
                                         </Scatter>

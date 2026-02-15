@@ -313,6 +313,50 @@ export const PersonasAPI = {
     api.post('/api/personas/compare/ask', { persona_ids: personaIds, question }).then(r => r.data),
 };
 
+// Persona Discovery API - Research-driven persona creation
+export interface DiscoveredSegment {
+  name: string;
+  description: string;
+  differentiators: string[];
+  evidence: string;
+}
+
+export interface DiscoveryResponse {
+  segments: DiscoveredSegment[];
+}
+
+export interface GeneratedPersonaProfile {
+  name: string;
+  age: number;
+  gender: string;
+  condition: string;
+  location: string;
+  persona_type: string;
+  tagline?: string;
+  core_insight?: string;
+  core?: Record<string, any>;
+  additional_context?: Record<string, any>;
+  [key: string]: any;
+}
+
+export const DiscoveryAPI = {
+  // Step 1: Discover segments from brand documents
+  discoverSegments: (brandId: number, limit: number = 5): Promise<DiscoveryResponse> =>
+    api.post('/api/personas/discover-from-docs', { brand_id: brandId, limit }).then(r => r.data),
+
+  // Step 2: Generate a full persona from a discovered or manually entered segment
+  generateFromSegment: (brandId: number, segmentName: string, segmentDescription: string): Promise<any> =>
+    api.post('/api/personas/generate-from-discovery', {
+      brand_id: brandId,
+      segment_name: segmentName,
+      segment_description: segmentDescription,
+    }).then(r => r.data),
+
+  // Step 3: Save a reviewed persona
+  saveGenerated: (payload: { brand_id: number; segment_name: string; persona_profile: any }): Promise<any> =>
+    api.post('/api/personas/save-generated', payload).then(r => r.data),
+};
+
 export interface BrandInsight {
   type: "Motivation" | "Belief" | "Tension";
   text: string;
@@ -359,7 +403,9 @@ export const BrandsAPI = {
   getSuggestions: (brandId: number, payload: { target_segment?: string; persona_type?: string; limit_per_category?: number }) =>
     api.post<BrandSuggestionResponse>(`/api/brands/${brandId}/persona-suggestions`, payload).then(r => r.data),
   enrichPersona: (personaId: number, payload: { brand_id: number; target_segment?: string; target_fields?: string[] }) =>
-    api.post(`/api/personas/${personaId}/enrich-from-brand`, payload).then(r => r.data)
+    api.post(`/api/personas/${personaId}/enrich-from-brand`, payload).then(r => r.data),
+  getDocumentContent: (brandId: number, documentId: number): Promise<{ content: string }> =>
+    api.get(`/api/brands/${brandId}/documents/${documentId}/content`).then(r => r.data)
 };
 
 export interface Segment {
@@ -567,19 +613,20 @@ export const AssetIntelligenceAPI = {
 };
 
 // Knowledge Graph API
-export interface KnowledgeNode {
+export type KnowledgeNode = {
   id: string;
-  node_type: string;
   text: string;
-  summary?: string;
-  segment?: string;
-  journey_stage?: string;
-  confidence: number;
-  source_document_id?: number;
   source_quote?: string;
+  segment?: string;
   verified: boolean;
+  node_type: string;
+  confidence: number;
+  source_document_id?: number | string;
+  summary?: string;
+  journey_stage?: string;
   created_at?: string;
-}
+  [key: string]: any;
+};
 
 export interface KnowledgeRelation {
   id: number;
@@ -616,6 +663,7 @@ export interface KnowledgeGraph {
     contradictions: number;
   };
 }
+
 
 export const KnowledgeGraphAPI = {
   // Get nodes for a brand
@@ -657,27 +705,7 @@ export const KnowledgeGraphAPI = {
     api.put(`/api/knowledge/nodes/${nodeId}/verify`, null, { params: { verified } }).then(r => r.data),
 };
 
-// Coverage API
-export interface CoverageSuggestion {
-  name: string;
-  persona_type: string;
-  age?: number;
-  gender?: string;
-  fill_gap?: string;
-  rationale: string;
-  priority: 'high' | 'medium' | 'low';
-  [key: string]: any;
-}
 
-export const CoverageAPI = {
-  // Get coverage analysis
-  getAnalysis: (brandId?: number): Promise<any> =>
-    api.get(`/api/coverage/analysis`, { params: { brand_id: brandId } }).then(r => r.data),
-
-  // Get AI suggestions
-  getSuggestions: (brandId?: number, limit: number = 5): Promise<{ success: boolean; suggestions: CoverageSuggestion[] }> =>
-    api.post(`/api/coverage/suggestions`, { brand_id: brandId, limit }).then(r => r.data),
-};
 
 // Chat API
 export interface ChatSession {
@@ -832,3 +860,4 @@ export const SyntheticTestingAPI = {
   getRun: (id: number): Promise<SyntheticTestRun> =>
     api.get(`/api/synthetic/runs/${id}`).then(r => r.data),
 };
+

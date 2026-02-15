@@ -110,6 +110,7 @@ You are simulating {persona['name']}, a {role} ({segment}), evaluating a pharmac
 - Gender: {persona['gender']}
 - Location: {persona['location']}
 - Bio: {json.dumps(full_persona.get('core', {}), indent=2)}
+- Additional Context: {json.dumps(persona.get('additional_context', {}), indent=2)}
 
 **MARKETING ASSET:**
 {content_desc}
@@ -232,7 +233,9 @@ def run_synthetic_testing(
                     'gender': p.gender,
                     'location': p.location,
                     'condition': p.condition,
-                    'full_persona': json.loads(p.full_persona_json) if getattr(p, 'full_persona_json', None) else {}
+                    'condition': p.condition,
+                    'full_persona': json.loads(p.full_persona_json) if getattr(p, 'full_persona_json', None) else {},
+                    'additional_context': p.additional_context or {}
                 })
                 
         if not personas:

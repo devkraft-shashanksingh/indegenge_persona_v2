@@ -31,6 +31,7 @@ export interface BrandInsightSelectorProps {
   onSuggestions?: (suggestions: SuggestionResponse) => void;
   onBrandChange?: (brandId: number | null) => void;
   onTargetSegmentChange?: (segment: string) => void;
+  brands?: Brand[];
   className?: string;
 }
 
@@ -50,10 +51,11 @@ export const BrandInsightSelector: React.FC<BrandInsightSelectorProps> = ({
   onSuggestions,
   onBrandChange,
   onTargetSegmentChange,
+  brands: initialBrands,
   className,
 }) => {
   const { toast } = useToast();
-  const [brands, setBrands] = useState<Brand[]>([]);
+  const [brands, setBrands] = useState<Brand[]>(initialBrands || []);
   const [selectedBrandId, setSelectedBrandId] = useState<string>("");
   const [targetSegment, setTargetSegment] = useState(defaultSegment);
   const [contextData, setContextData] = useState<InsightResponse>(emptyInsights);
@@ -63,11 +65,18 @@ export const BrandInsightSelector: React.FC<BrandInsightSelectorProps> = ({
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
 
   useEffect(() => {
+    if (initialBrands && initialBrands.length > 0) {
+      setBrands(initialBrands);
+      if (!selectedBrandId) {
+        setSelectedBrandId(String(initialBrands[0].id));
+      }
+      return;
+    }
+
     const fetchBrands = async () => {
       try {
         const data = await BrandsAPI.list();
         setBrands(data);
-        // Use functional update to avoid dependency on selectedBrandId
         setSelectedBrandId((current) => {
           if (data.length && !current) {
             return String(data[0].id);
@@ -84,8 +93,7 @@ export const BrandInsightSelector: React.FC<BrandInsightSelectorProps> = ({
       }
     };
     fetchBrands();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [initialBrands]);
 
   useEffect(() => {
     onSelectionChange?.(selectedInsights);
