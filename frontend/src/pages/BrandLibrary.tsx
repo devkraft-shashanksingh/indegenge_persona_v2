@@ -1,34 +1,34 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Input } from "@/components/ui/input";
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import {
-  Upload, FileText, CheckCircle, Circle, Plus, Loader2, Sparkles,
-  Library, Users, ArrowRight, UserPlus, Search, MoreVertical,
-  LayoutDashboard, Target, Brain, AlertTriangle, ShieldCheck
+  Upload, FileText, Plus, Loader2, Sparkles,
+  Library, Users, UserPlus, Search, MoreVertical,
+  ChevronRight, ExternalLink, Calendar
 } from 'lucide-react';
 import { useToast } from "@/components/ui/use-toast";
 import { BrandsAPI } from "@/lib/api";
-import { BrandMBTDashboard } from "@/components/BrandMBTDashboard";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 
 interface Brand {
   id: number;
   name: string;
-}
-
-interface BrandInsight {
-  type: "Motivation" | "Belief" | "Tension";
-  text: string;
-  source_document?: string;
 }
 
 interface BrandDocument {
@@ -37,18 +37,17 @@ interface BrandDocument {
   category: string;
   summary: string;
   created_at: string;
-  extracted_insights?: BrandInsight[];
 }
 
-const KNOWLEDGE_PILLARS = [
-  "Disease & Patient Journey Overview",
-  "Treatment Landscape / SoC",
-  "Brand Value Proposition & Core Messaging",
-  "Safety & Tolerability Summary",
-  "HCP & Patient Segmentation",
-  "Market Research & Insight Summaries",
-  "Adherence / Persistence / Discontinuation Insights"
-];
+interface Persona {
+  id: number;
+  name: string;
+  avatar_url?: string;
+  persona_type: string;
+  condition: string;
+  created_at: string;
+  tagline?: string;
+}
 
 const BrandLibrary = () => {
   const navigate = useNavigate();
@@ -56,12 +55,18 @@ const BrandLibrary = () => {
   const [selectedBrandId, setSelectedBrandId] = useState<string>("");
   const [newBrandName, setNewBrandName] = useState("");
   const [documents, setDocuments] = useState<BrandDocument[]>([]);
+  const [personas, setPersonas] = useState<Persona[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [isCreatingBrand, setIsCreatingBrand] = useState(false);
   const [isSeeding, setIsSeeding] = useState(false);
   const [isIngesting, setIsIngesting] = useState(false);
   const [personaCount, setPersonaCount] = useState<number>(0);
   const [searchTerm, setSearchTerm] = useState("");
+  const [selectedDoc, setSelectedDoc] = useState<BrandDocument | null>(null);
+  const [isPreviewLoading, setIsPreviewLoading] = useState(false);
+  const [docContent, setDocContent] = useState<string>("");
+  const [bulkIngestPath, setBulkIngestPath] = useState("");
+  const [isIngestModalOpen, setIsIngestModalOpen] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -70,10 +75,13 @@ const BrandLibrary = () => {
 
   useEffect(() => {
     if (selectedBrandId) {
-      fetchDocuments(parseInt(selectedBrandId));
-      fetchPersonaCount(parseInt(selectedBrandId));
+      const brandId = parseInt(selectedBrandId);
+      fetchDocuments(brandId);
+      fetchPersonaCount(brandId);
+      fetchPersonas(brandId);
     } else {
       setDocuments([]);
+      setPersonas([]);
       setPersonaCount(0);
     }
   }, [selectedBrandId]);
@@ -88,12 +96,19 @@ const BrandLibrary = () => {
     }
   };
 
+  const fetchPersonas = async (brandId: number) => {
+    try {
+      const data = await BrandsAPI.getPersonas(brandId);
+      setPersonas(data);
+    } catch (error) {
+      console.error("Failed to fetch personas", error);
+    }
+  };
+
   const fetchBrands = async () => {
     try {
       const data = await BrandsAPI.list();
       setBrands(data);
-      // Optional: Auto-select first brand if none selected
-      // if (data.length > 0 && !selectedBrandId) setSelectedBrandId(data[0].id.toString());
     } catch (error) {
       console.error("Failed to fetch brands", error);
       toast({ title: "Error", description: "Failed to load brands.", variant: "destructive" });
@@ -133,7 +148,7 @@ const BrandLibrary = () => {
     setIsSeeding(true);
     try {
       const newDocs = await BrandsAPI.seed(parseInt(selectedBrandId));
-      setDocuments([...documents, ...newDocs]);
+      fetchDocuments(parseInt(selectedBrandId));
       toast({
         title: "Demo Data Populated",
         description: `Added ${newDocs.length} mock documents.`
@@ -148,23 +163,14 @@ const BrandLibrary = () => {
   };
 
   const handleBulkIngest = async () => {
-    if (!selectedBrandId) return;
-
-    // Simple prompt for now - could be a dialog in future
-    const folderPath = window.prompt(
-      "Enter absolute folder path to ingest (on server):",
-      "data/mounjaro_resources"
-    );
-
-    if (!folderPath) return;
+    if (!selectedBrandId || !bulkIngestPath.trim()) return;
 
     setIsIngesting(true);
     try {
-      const result = await BrandsAPI.ingestFolder(parseInt(selectedBrandId), folderPath);
-
-      // Refresh documents
+      const result = await BrandsAPI.ingestFolder(parseInt(selectedBrandId), bulkIngestPath);
       fetchDocuments(parseInt(selectedBrandId));
-
+      setIsIngestModalOpen(false);
+      setBulkIngestPath("");
       toast({
         title: "Ingestion Complete",
         description: `Processed ${result.total_files} files. Created ${result.total_nodes_created} knowledge nodes.`
@@ -185,7 +191,7 @@ const BrandLibrary = () => {
     setIsUploading(true);
     try {
       const newDoc = await BrandsAPI.upload(parseInt(selectedBrandId), file);
-      setDocuments([...documents, newDoc]);
+      setDocuments(prev => [...prev, newDoc]);
       toast({
         title: "File uploaded",
         description: `Classified as: ${newDoc.category}`
@@ -199,13 +205,19 @@ const BrandLibrary = () => {
     }
   };
 
-  const getCategoryStatus = (category: string) => {
-    const hasDoc = documents.some(d => d.category === category);
-    return hasDoc ? (
-      <CheckCircle className="h-4 w-4 text-emerald-500" />
-    ) : (
-      <Circle className="h-4 w-4 text-muted-foreground/30" />
-    );
+  const handleDocClick = async (doc: BrandDocument) => {
+    setSelectedDoc(doc);
+    setDocContent("");
+    setIsPreviewLoading(true);
+    try {
+      const data = await BrandsAPI.getDocumentContent(parseInt(selectedBrandId), doc.id);
+      setDocContent(data.content);
+    } catch (error) {
+      console.error("Failed to fetch document content", error);
+      toast({ title: "Error", description: "Failed to load document content.", variant: "destructive" });
+    } finally {
+      setIsPreviewLoading(false);
+    }
   };
 
   const filteredBrands = brands.filter(b =>
@@ -215,23 +227,26 @@ const BrandLibrary = () => {
   const selectedBrand = brands.find(b => b.id.toString() === selectedBrandId);
 
   return (
-    <div className="flex w-full h-screen bg-background overflow-hidden">
+    <div className="flex w-full h-full bg-[#FAFAFE] overflow-hidden">
 
       {/* 1. LEFT SIDEBAR: Brand List */}
-      <div className="w-72 flex-shrink-0 border-r bg-muted/10 flex flex-col">
-        <div className="p-4 border-b bg-background">
-          <div className="flex items-center gap-2 mb-4 text-violet-600 font-bold text-lg">
-            <div className="bg-violet-100 p-1.5 rounded">
-              <Library className="h-5 w-5" />
+      <div className="w-80 flex-shrink-0 border-r bg-white/50 backdrop-blur-xl flex flex-col shadow-sm relative z-10">
+        <div className="p-6 border-b bg-white/90 sticky top-0">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="bg-violet-600 p-2 rounded-xl shadow-lg shadow-violet-200">
+              <Library className="h-5 w-5 text-white" />
             </div>
-            Brand Library
+            <div>
+              <h1 className="text-xl font-bold text-slate-900 tracking-tight">Brand Library</h1>
+              <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Knowledge Repository</p>
+            </div>
           </div>
 
-          <div className="relative mb-3">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+          <div className="relative mb-4">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
             <Input
               placeholder="Search brands..."
-              className="pl-8 h-9 bg-background"
+              className="pl-9 h-11 bg-slate-50 border-slate-100 rounded-xl focus-visible:ring-violet-500 transition-all duration-200"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
@@ -240,36 +255,47 @@ const BrandLibrary = () => {
           <div className="flex gap-2">
             <Input
               placeholder="New Brand Name"
-              className="h-8 text-xs"
+              className="h-10 bg-slate-50 border-slate-100 rounded-xl text-sm"
               value={newBrandName}
               onChange={(e) => setNewBrandName(e.target.value)}
             />
-            <Button size="sm" onClick={handleCreateBrand} disabled={!newBrandName || isCreatingBrand} className="h-8 px-2 bg-violet-600 hover:bg-violet-700">
-              {isCreatingBrand ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-4 w-4" />}
+            <Button
+              size="icon"
+              onClick={handleCreateBrand}
+              disabled={!newBrandName || isCreatingBrand}
+              className="h-10 w-10 shrink-0 bg-violet-600 hover:bg-violet-700 rounded-xl shadow-md transition-all active:scale-95"
+            >
+              {isCreatingBrand ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-5 w-5" />}
             </Button>
           </div>
         </div>
 
-        <ScrollArea className="flex-1">
-          <div className="p-2 space-y-1">
+        <ScrollArea className="flex-1 px-4 py-4">
+          <div className="space-y-2">
             {filteredBrands.map(brand => (
               <button
                 key={brand.id}
                 onClick={() => setSelectedBrandId(brand.id.toString())}
-                className={`w-full text-left px-3 py-2.5 rounded-md text-sm font-medium transition-all flex items-center justify-between group ${selectedBrandId === brand.id.toString()
-                  ? 'bg-violet-100 text-violet-900 shadow-sm ring-1 ring-violet-200 dark:bg-violet-900/40 dark:text-violet-100'
-                  : 'hover:bg-muted text-muted-foreground hover:text-foreground'
+                className={`w-full text-left px-4 py-3.5 rounded-2xl text-sm font-semibold transition-all duration-300 flex items-center justify-between group relative overflow-hidden ${selectedBrandId === brand.id.toString()
+                  ? 'bg-violet-600 text-white shadow-lg shadow-violet-100 translate-x-1'
+                  : 'hover:bg-violet-50 text-slate-600 hover:text-violet-600'
                   }`}
               >
-                <span className="truncate">{brand.name}</span>
+                <div className="flex items-center gap-3 relative z-10">
+                  <div className={`w-2 h-2 rounded-full transition-all duration-300 ${selectedBrandId === brand.id.toString() ? 'bg-white' : 'bg-slate-200 group-hover:bg-violet-300'}`} />
+                  <span className="truncate">{brand.name}</span>
+                </div>
                 {selectedBrandId === brand.id.toString() && (
-                  <ArrowRight className="h-3 w-3 opacity-50" />
+                  <ChevronRight className="h-4 w-4 text-white animate-in slide-in-from-left-2 duration-300" />
                 )}
               </button>
             ))}
             {filteredBrands.length === 0 && (
-              <div className="text-center p-4 text-xs text-muted-foreground">
-                No brands found
+              <div className="text-center py-12">
+                <div className="bg-slate-50 w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3">
+                  <Search className="h-5 w-5 text-slate-300" />
+                </div>
+                <p className="text-xs text-slate-400 font-medium">No results found</p>
               </div>
             )}
           </div>
@@ -277,34 +303,44 @@ const BrandLibrary = () => {
       </div>
 
       {/* 2. CENTER: Knowledge Assets */}
-      <div className="flex-1 flex flex-col min-w-0 bg-background overflow-hidden relative">
+      <div className="flex-1 flex flex-col min-w-0 bg-[#FAFAFE] overflow-hidden relative">
 
         {!selectedBrandId ? (
-          <div className="flex flex-col items-center justify-center h-full text-center p-8 text-muted-foreground">
-            <div className="bg-muted/30 p-6 rounded-full mb-4">
-              <Library className="h-12 w-12 opacity-20" />
+          <div className="flex flex-col items-center justify-center h-full text-center p-8 bg-white/40">
+            <div className="relative mb-8">
+              <div className="absolute inset-0 bg-violet-500/10 blur-3xl rounded-full scale-150" />
+              <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl relative">
+                <Library className="h-16 w-16 text-violet-600/20" />
+              </div>
             </div>
-            <h2 className="text-xl font-semibold text-foreground mb-2">Select a Brand Context</h2>
-            <p className="max-w-sm">
-              Choose a brand from the sidebar or create a new one to manage its knowledge assets and personas.
+            <h2 className="text-2xl font-bold text-slate-900 mb-3 tracking-tight">Select a Brand Context</h2>
+            <p className="max-w-xs text-slate-500 text-sm leading-relaxed font-medium">
+              Choose a pharmaceutical brand to manage its clinical documents, market research, and persona library.
             </p>
           </div>
         ) : (
           <>
-            {/* Toolbar */}
-            <div className="h-14 border-b flex items-center justify-between px-6 bg-background/50 backdrop-blur z-10 sticky top-0">
-              <div className="flex items-center gap-3">
-                <h2 className="text-lg font-bold">{selectedBrand?.name}</h2>
-                <Badge variant="outline" className="font-normal text-muted-foreground">
-                  {documents.length} Assets
-                </Badge>
+            {/* Main Header / Toolbar */}
+            <div className="h-20 flex items-center justify-between px-8 bg-white/60 backdrop-blur-md border-b border-slate-100 sticky top-0 z-20">
+              <div className="flex items-center gap-4">
+                <div className="flex flex-col">
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-xl font-extrabold text-slate-900 tracking-tight">{selectedBrand?.name}</h2>
+                    <Badge className="bg-emerald-50 text-emerald-600 border-none hover:bg-emerald-100 rounded-full px-3 py-0 h-6 text-[10px] font-bold">
+                      ACTIVE
+                    </Badge>
+                  </div>
+                  <p className="text-xs text-slate-400 font-medium">
+                    {documents.length} Curated Knowledge Assets
+                  </p>
+                </div>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-3">
                 <label className="cursor-pointer">
-                  <Button size="sm" variant="default" disabled={isUploading || isIngesting} className="pointer-events-none">
-                    <Upload className="h-3.5 w-3.5 mr-2" />
-                    {isUploading ? "Uploading..." : "Upload PDF/Doc"}
+                  <Button size="sm" className="bg-violet-600 hover:bg-violet-700 text-white shadow-lg shadow-violet-100 px-5 rounded-xl h-11 font-bold pointer-events-none">
+                    <Upload className="h-4 w-4 mr-2" />
+                    {isUploading ? "Processing..." : "Secure Upload"}
                   </Button>
                   <input
                     type="file"
@@ -317,178 +353,286 @@ const BrandLibrary = () => {
 
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button size="icon" variant="ghost">
-                      <MoreVertical className="h-4 w-4" />
+                    <Button size="icon" variant="ghost" className="h-11 w-11 rounded-xl border border-slate-100 bg-white hover:bg-slate-50">
+                      <MoreVertical className="h-5 w-5 text-slate-400" />
                     </Button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={handleSeedData} disabled={isSeeding || isIngesting}>
-                      <Sparkles className="h-4 w-4 mr-2" />
-                      {isSeeding ? "Seeding..." : "Populate Demo Data"}
+                  <DropdownMenuContent align="end" className="w-56 p-2 rounded-2xl shadow-2xl border-slate-100">
+                    <DropdownMenuItem
+                      onClick={handleSeedData}
+                      disabled={isSeeding || isIngesting}
+                      className="rounded-xl py-3 cursor-pointer"
+                    >
+                      <Sparkles className="h-4 w-4 mr-2 text-amber-500" />
+                      <span className="font-semibold text-slate-700">Seed Demo Data</span>
                     </DropdownMenuItem>
-                    <DropdownMenuItem onClick={handleBulkIngest} disabled={isSeeding || isIngesting}>
-                      {isIngesting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Library className="h-4 w-4 mr-2" />}
-                      {isIngesting ? "Ingesting..." : "Bulk Ingest Folder"}
+                    <DropdownMenuItem
+                      onClick={() => setIsIngestModalOpen(true)}
+                      disabled={isSeeding || isIngesting}
+                      className="rounded-xl py-3 cursor-pointer"
+                    >
+                      {isIngesting ? <Loader2 className="h-4 w-4 mr-2 animate-spin text-violet-600" /> : <Library className="h-4 w-4 mr-2 text-violet-600" />}
+                      <span className="font-semibold text-slate-700">Bulk Directory Ingest</span>
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>
             </div>
 
-            {/* Content */}
-            <div className="flex-1 overflow-y-auto p-6 bg-slate-50/50 dark:bg-black/20">
-
-              <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 w-full">
+            {/* Scrollable Content Area */}
+            <ScrollArea className="flex-1 p-8">
+              <div className="grid grid-cols-1 xl:grid-cols-2 2xl:grid-cols-3 gap-6">
                 {documents.length === 0 ? (
-                  <Card className="col-span-1 xl:col-span-2 border-dashed py-12 flex flex-col items-center justify-center text-center">
-                    <div className="p-4 bg-muted rounded-full mb-4">
-                      <Upload className="h-8 w-8 text-muted-foreground/50" />
+                  <div className="col-span-full py-24 flex flex-col items-center justify-center text-center opacity-80">
+                    <div className="bg-white/80 w-24 h-24 rounded-[2rem] shadow-xl flex items-center justify-center mb-6 relative">
+                      <div className="absolute inset-0 bg-violet-500/5 animate-pulse rounded-[2rem]" />
+                      <FileText className="h-10 w-10 text-violet-200" />
                     </div>
-                    <h3 className="font-semibold text-lg">No Knowledge Assets</h3>
-                    <p className="text-muted-foreground text-sm max-w-sm mt-1 mb-4">
-                      Upload clinical studies, brand guidelines, or market research to ground your personas in reality.
+                    <h3 className="font-bold text-xl text-slate-900">Repository Empty</h3>
+                    <p className="text-slate-400 text-sm max-w-xs mt-2 mb-8 font-medium">
+                      Upload medical communications, brand storyboards, or patient journey maps to start grounding your AI.
                     </p>
-                    <Button variant="outline" onClick={handleSeedData} disabled={isSeeding}>
-                      Populate with Demo Data
+                    <Button
+                      variant="secondary"
+                      onClick={handleSeedData}
+                      disabled={isSeeding}
+                      className="border-none bg-violet-50 text-violet-600 px-8 py-6 rounded-2xl font-bold hover:bg-violet-100"
+                    >
+                      Initialize with Samples
                     </Button>
-                  </Card>
+                  </div>
                 ) : (
-                  documents.map((doc) => {
-                    const insights = doc.extracted_insights || [];
-                    const motivations = insights.filter(i => i.type === "Motivation");
-                    const beliefs = insights.filter(i => i.type === "Belief");
-                    const tensions = insights.filter(i => i.type === "Tension");
+                  documents.map((doc) => (
+                    <Card
+                      key={doc.id}
+                      onClick={() => handleDocClick(doc)}
+                      className="group cursor-pointer hover:border-violet-300 hover:shadow-2xl transition-all duration-500 border-white bg-white/80 backdrop-blur-sm rounded-3xl overflow-hidden shadow-sm flex flex-col relative h-[180px]"
+                    >
+                      <div className="absolute top-0 right-0 w-32 h-32 bg-violet-50 rounded-full blur-3xl -mr-16 -mt-16 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
 
-                    return (
-                      <Card key={doc.id} className="group hover:shadow-md transition-all border-border/60 flex flex-col">
-                        <CardHeader className="py-3 px-4 border-b bg-muted/20 flex flex-row items-center justify-between space-y-0">
-                          <div className="flex items-center gap-3 overflow-hidden">
-                            <div className="p-2 bg-background rounded border shadow-sm text-blue-600 shrink-0">
-                              <FileText className="h-4 w-4" />
-                            </div>
-                            <div className="min-w-0">
-                              <CardTitle className="text-sm font-medium leading-none mb-1 truncate">{doc.filename}</CardTitle>
-                              <CardDescription className="text-xs truncate">{doc.summary}</CardDescription>
-                            </div>
+                      <CardHeader className="py-5 px-6 pb-2 relative z-10">
+                        <div className="flex items-start justify-between">
+                          <div className="p-3 bg-slate-50 border border-slate-100 text-violet-600 rounded-2xl group-hover:bg-violet-600 group-hover:text-white group-hover:border-violet-600 transition-all duration-500 shadow-sm">
+                            <FileText className="h-5 w-5" />
                           </div>
-                          <Badge variant="secondary" className="font-normal text-[10px] opacity-70 group-hover:opacity-100 shrink-0 ml-2">
-                            {doc.category}
+                          <Badge variant="secondary" className="bg-slate-100 text-slate-500 border-none rounded-lg px-2 py-0.5 text-[9px] font-bold group-hover:bg-violet-100 group-hover:text-violet-600 transition-colors">
+                            {doc.category || 'RESOURCES'}
                           </Badge>
-                        </CardHeader>
-                        <CardContent className="p-4 flex-1">
-                          {insights.length > 0 ? (
-                            <div className="space-y-3">
-                              <div className="flex flex-wrap gap-x-4 gap-y-2 text-xs font-medium text-muted-foreground">
-                                <div className="flex items-center gap-1.5"><Target className="h-3 w-3 text-blue-500" /> {motivations.length} Motivations</div>
-                                <div className="flex items-center gap-1.5"><Brain className="h-3 w-3 text-purple-500" /> {beliefs.length} Beliefs</div>
-                                <div className="flex items-center gap-1.5"><AlertTriangle className="h-3 w-3 text-orange-500" /> {tensions.length} Tensions</div>
-                              </div>
+                        </div>
+                      </CardHeader>
 
-                              <div className="grid grid-cols-1 gap-2 mt-2">
-                                {[...motivations, ...beliefs, ...tensions].slice(0, 4).map((insight, idx) => (
-                                  <div key={idx} className="text-xs p-2 bg-muted/30 rounded border flex gap-2">
-                                    <span className={`font-bold shrink-0 ${insight.type === 'Motivation' ? 'text-blue-600' :
-                                      insight.type === 'Belief' ? 'text-purple-600' : 'text-orange-600'
-                                      }`}>
-                                      {insight.type.charAt(0)}
-                                    </span>
-                                    <span className="truncate">{insight.text}</span>
-                                  </div>
-                                ))}
-                                {insights.length > 4 && (
-                                  <div className="text-xs text-muted-foreground p-2 flex items-center justify-center">
-                                    +{insights.length - 4} more insights
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          ) : (
-                            <div className="text-xs text-muted-foreground italic flex items-center gap-2">
-                              <Loader2 className="h-3 w-3 animate-spin" /> Processing insights...
-                            </div>
-                          )}
-                        </CardContent>
-                      </Card>
-                    )
-                  })
+                      <CardContent className="px-6 py-2 relative z-10 flex-1">
+                        <CardTitle className="text-sm font-bold text-slate-800 line-clamp-1 mb-2 group-hover:text-violet-900">{doc.filename}</CardTitle>
+                        <p className="text-[11px] text-slate-400 font-medium line-clamp-2 leading-relaxed mb-4">
+                          {doc.summary || "Deep knowledge node extracted from clinical literature and brand strategy assets."}
+                        </p>
+
+                        <div className="flex items-center justify-between pt-2 border-t border-slate-50 group-hover:border-violet-50">
+                          <div className="flex items-center gap-1.5 text-[10px] text-slate-400 font-bold">
+                            <Calendar className="h-3 w-3" />
+                            {new Date(doc.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                          </div>
+                          <Button variant="ghost" className="h-6 w-6 p-0 rounded-lg hover:bg-slate-100 opacity-0 group-hover:opacity-100 transition-all">
+                            <ExternalLink className="h-3 w-3 text-slate-400" />
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))
                 )}
               </div>
-            </div>
+            </ScrollArea>
           </>
         )}
       </div>
 
-      {/* 3. RIGHT SIDEBAR: Brand Intelligence */}
+      {/* 3. RIGHT SIDEBAR: Brand Personas */}
       {selectedBrandId && (
-        <div className="w-96 flex-shrink-0 border-l bg-background flex flex-col shadow-xl z-20">
-          <ScrollArea className="flex-1">
-            <div className="p-6 space-y-6">
-
-              {/* Personas Widget */}
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <h3 className="font-semibold flex items-center gap-2">
-                    <Users className="h-4 w-4 text-primary" />
-                    Brand Personas
-                  </h3>
-                  <Badge variant="secondary">{personaCount}</Badge>
+        <div className="w-[380px] flex-shrink-0 bg-white border-l border-slate-100 flex flex-col relative z-20 shadow-2xl shadow-slate-200">
+          <div className="p-8 pb-4">
+            <div className="flex items-center justify-between mb-8">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-indigo-50 rounded-2xl">
+                  <Users className="h-6 w-6 text-indigo-600" />
                 </div>
-                <Card className="bg-muted/30 border-dashed shadow-none">
-                  <CardContent className="p-3 space-y-2">
-                    <Button
-                      className="w-full text-xs h-8"
-                      variant="default"
-                      onClick={() => navigate(`/create?brand_id=${selectedBrandId}`)}
-                    >
-                      <UserPlus className="h-3 w-3 mr-2" />
-                      New Persona
-                    </Button>
-                    <Button
-                      className="w-full text-xs h-8"
-                      variant="outline"
-                      onClick={() => navigate(`/personas?brand_id=${selectedBrandId}`)}
-                    >
-                      View All Personas
-                    </Button>
-                  </CardContent>
-                </Card>
+                <div>
+                  <h3 className="font-extrabold text-slate-900 tracking-tight">Brand Personas</h3>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest leading-none mt-1">Grounded Fleet</p>
+                </div>
               </div>
+              <Badge className="bg-indigo-600 text-white rounded-xl px-2.5 h-6 font-bold text-xs ring-4 ring-indigo-50 border-none">
+                {personaCount}
+              </Badge>
+            </div>
 
-              {/* Dashboard Widget */}
-              <div className="space-y-3">
-                <h3 className="font-semibold flex items-center gap-2">
-                  <LayoutDashboard className="h-4 w-4 text-primary" />
-                  Aggregated Insights
-                </h3>
-                {/* We use class override to make it fit better */}
-                <BrandMBTDashboard
-                  brandId={parseInt(selectedBrandId)}
-                  brandName={selectedBrand?.name || ''}
-                  className="text-xs"
-                />
-              </div>
+            <div className="grid grid-cols-2 gap-3 mb-8">
+              <Button
+                className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold h-12 rounded-2xl shadow-lg shadow-indigo-100 transition-all active:scale-95 text-xs flex-1"
+                onClick={() => navigate(`/create-persona?brand_id=${selectedBrandId}`)}
+              >
+                <UserPlus className="h-4 w-4 mr-2" />
+                New Persona
+              </Button>
+              <Button
+                className="bg-white hover:bg-slate-50 text-indigo-600 border-2 border-slate-50 font-bold h-12 rounded-2xl text-xs flex-1 transition-all active:scale-95 shadow-sm"
+                onClick={() => navigate(`/personas?brand_id=${selectedBrandId}`)}
+              >
+                Library View
+              </Button>
+            </div>
 
-              {/* Knowledge Coverage Widget */}
-              <div className="space-y-3">
-                <h3 className="font-semibold flex items-center gap-2">
-                  <ShieldCheck className="h-4 w-4 text-primary" />
-                  Knowledge Coverage
-                </h3>
-                <div className="space-y-2 bg-muted/10 p-3 rounded-lg border">
-                  {KNOWLEDGE_PILLARS.map((pillar, index) => (
-                    <div key={index} className="flex items-start gap-2.5">
-                      <div className="mt-0.5">{getCategoryStatus(pillar)}</div>
-                      <span className="text-xs text-muted-foreground leading-tight">{pillar}</span>
+            <div className="flex items-center justify-between mb-4 px-1">
+              <h4 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em]">Recently Created</h4>
+              <div className="h-[2px] w-12 bg-indigo-50 rounded-full" />
+            </div>
+          </div>
+
+          <ScrollArea className="flex-1 px-8">
+            <div className="space-y-4 pb-12">
+              {personas.length === 0 ? (
+                <div className="py-12 px-4 rounded-[2rem] bg-indigo-50/30 border border-dashed border-indigo-100 flex flex-col items-center text-center">
+                  <div className="bg-white w-14 h-14 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-100 mb-4">
+                    <Sparkles className="h-6 w-6 text-indigo-300" />
+                  </div>
+                  <p className="text-sm font-bold text-indigo-900/40">No personas found for this brand context.</p>
+                </div>
+              ) : (
+                personas.map((p) => (
+                  <div
+                    key={p.id}
+                    onClick={() => navigate(`/personas?id=${p.id}`)}
+                    className="group cursor-pointer bg-slate-50 hover:bg-white hover:shadow-2xl hover:shadow-slate-200 hover:-translate-y-1 p-4 rounded-3xl border border-transparent hover:border-slate-50 transition-all duration-500 flex items-center gap-4 relative overflow-hidden"
+                  >
+                    <Avatar className="h-14 w-14 border-4 border-white shadow-xl rounded-2xl shrink-0 group-hover:scale-105 transition-transform duration-500">
+                      <AvatarImage src={p.avatar_url} alt={p.name} className="object-cover" />
+                      <AvatarFallback className="bg-gradient-to-br from-indigo-500 to-indigo-700 text-white font-bold text-lg rounded-2xl">
+                        {p.name.charAt(0)}
+                      </AvatarFallback>
+                    </Avatar>
+
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="font-bold text-slate-800 text-sm truncate group-hover:text-indigo-600 transition-colors uppercase tracking-tight">{p.name}</span>
+                        {p.persona_type === 'HCP' && (
+                          <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                        )}
+                      </div>
+                      <p className="text-[11px] font-bold text-slate-400 line-clamp-1 mb-1">{p.condition}</p>
+                      <Badge className="bg-white text-[9px] text-slate-500 border-none shadow-sm rounded-lg px-2 py-0 h-5 font-black uppercase tracking-tighter">
+                        {p.persona_type}
+                      </Badge>
                     </div>
-                  ))}
-                </div>
-              </div>
 
+                    <div className="shrink-0 transition-all duration-500 group-hover:translate-x-1 opacity-0 group-hover:opacity-100">
+                      <ChevronRight className="h-5 w-5 text-indigo-400" />
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </ScrollArea>
         </div>
       )}
 
+      {/* 4. Document Preview Modal */}
+      <Dialog open={!!selectedDoc} onOpenChange={(open) => !open && setSelectedDoc(null)}>
+        <DialogContent className="max-w-4xl max-h-[85vh] flex flex-col p-0 overflow-hidden border-none rounded-[2.5rem] bg-white shadow-2xl">
+          <DialogHeader className="p-8 pb-4 border-b border-slate-50 relative z-10">
+            <div className="flex items-center gap-4">
+              <div className="p-4 bg-violet-50 text-violet-600 rounded-2xl">
+                <FileText className="h-6 w-6" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <DialogTitle className="text-xl font-extrabold text-slate-900 tracking-tight truncate">
+                  {selectedDoc?.filename}
+                </DialogTitle>
+                <div className="flex items-center gap-2 mt-1">
+                  <Badge variant="outline" className="text-[10px] font-bold border-slate-200 text-slate-500 uppercase px-2 py-0 h-5">
+                    {selectedDoc?.category || 'General Document'}
+                  </Badge>
+                  <span className="text-[10px] text-slate-400 font-bold">•</span>
+                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                    Knowledge Asset
+                  </span>
+                </div>
+              </div>
+            </div>
+          </DialogHeader>
+
+          <ScrollArea className="flex-1 p-8 pt-6">
+            <div className="prose prose-slate max-w-none">
+              {isPreviewLoading ? (
+                <div className="flex flex-col items-center justify-center py-24 gap-4">
+                  <div className="relative">
+                    <div className="absolute inset-0 bg-violet-500/10 blur-xl rounded-full scale-150 animate-pulse" />
+                    <Loader2 className="h-10 w-10 text-violet-600 animate-spin relative z-10" />
+                  </div>
+                  <p className="text-sm font-bold text-slate-400 animate-pulse tracking-wide uppercase">Extracting Intelligence...</p>
+                </div>
+              ) : (
+                <div className="bg-slate-50/50 p-8 rounded-[2rem] border border-slate-100/50 relative overflow-hidden group">
+                  <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-violet-500/20 via-indigo-500/20 to-violet-500/20" />
+                  <pre className="whitespace-pre-wrap font-sans text-sm text-slate-600 leading-relaxed tracking-tight selection:bg-violet-200/50">
+                    {docContent || "No content found for this document."}
+                  </pre>
+                </div>
+              )}
+            </div>
+            <div className="h-8" />
+          </ScrollArea>
+
+          <div className="p-6 border-t border-slate-50 bg-slate-50/30 flex justify-end gap-3 rounded-b-[2.5rem]">
+            <Button
+              variant="outline"
+              onClick={() => setSelectedDoc(null)}
+              className="rounded-xl px-6 h-11 font-bold border-slate-200 text-slate-600 hover:bg-white"
+            >
+              Close
+            </Button>
+            <Button
+              className="rounded-xl px-6 h-11 font-bold bg-violet-600 hover:bg-violet-700 shadow-lg shadow-violet-100"
+            >
+              Download PDF
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* 5. Ingest Path Modal */}
+      <Dialog open={isIngestModalOpen} onOpenChange={setIsIngestModalOpen}>
+        <DialogContent className="sm:max-w-md rounded-2xl">
+          <DialogHeader>
+            <DialogTitle>Bulk Directory Ingest</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-slate-700">Server Folder Path</label>
+              <Input
+                placeholder="e.g. data/resources"
+                value={bulkIngestPath}
+                onChange={(e) => setBulkIngestPath(e.target.value)}
+                className="rounded-xl"
+              />
+              <p className="text-[11px] text-slate-400">
+                Provide an absolute or relative path accessible by the backend server.
+              </p>
+            </div>
+          </div>
+          <div className="flex justify-end gap-3">
+            <Button variant="outline" onClick={() => setIsIngestModalOpen(false)} className="rounded-xl">
+              Cancel
+            </Button>
+            <Button
+              onClick={handleBulkIngest}
+              disabled={!bulkIngestPath || isIngesting}
+              className="bg-violet-600 hover:bg-violet-700 text-white rounded-xl"
+            >
+              {isIngesting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Start Ingestion
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

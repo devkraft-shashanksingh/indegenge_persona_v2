@@ -4,13 +4,10 @@ import Dashboard from './pages/Dashboard';
 import { PersonaLibrary } from './pages/PersonaLibrary';
 import BrandLibrary from './pages/BrandLibrary';
 import { CreatePersona } from './pages/CreatePersona';
-import { PersonaBuilder } from './pages/PersonaBuilder';
 import { SimulationHub } from './pages/SimulationHub';
 import { Analytics } from './pages/Analytics';
-import { PersonaCoverage } from './pages/PersonaCoverage';
 import { ComparePersonas } from './pages/ComparePersonas';
 import { KnowledgeGraphPage } from './pages/KnowledgeGraphPage';
-
 import { PersonaChat } from './pages/PersonaChat';
 
 function App() {
@@ -24,10 +21,8 @@ function App() {
           <Route path="brand-library" element={<BrandLibrary />} />
           <Route path="knowledge-graph" element={<KnowledgeGraphPage />} />
           <Route path="create-persona" element={<CreatePersona />} />
-          <Route path="persona-builder" element={<PersonaBuilder />} />
           <Route path="simulation" element={<SimulationHub />} />
           <Route path="analytics" element={<Analytics />} />
-          <Route path="coverage" element={<PersonaCoverage />} />
           <Route path="compare" element={<ComparePersonas />} />
         </Route>
       </Routes>

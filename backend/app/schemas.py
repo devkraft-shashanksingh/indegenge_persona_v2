@@ -63,6 +63,7 @@ class PersonaBase(BaseModel):
     channel_use: Optional[str] = None
     decision_style: Optional[str] = None
     core_insight: Optional[str] = None
+    additional_context: Optional[Dict[str, Any]] = None  # Flexible bucket for non-schema insights
 
 class PersonaCreate(BaseModel):
     # This schema is for the input data to the generation endpoint
@@ -74,6 +75,7 @@ class PersonaCreate(BaseModel):
     brand_id: Optional[int] = None
     segment: Optional[str] = None
     disease: Optional[str] = None
+    additional_context: Optional[Dict[str, Any]] = None
 
 class PersonaUpdate(BaseModel):
     name: Optional[str] = None
@@ -95,6 +97,7 @@ class PersonaUpdate(BaseModel):
     channel_use: Optional[str] = None
     decision_style: Optional[str] = None
     core_insight: Optional[str] = None
+    additional_context: Optional[Dict[str, Any]] = None
     full_persona_json: Optional[Union[str, Dict[str, Any]]] = None
     # Field-level updates for partial persona JSON updates
     field_updates: Optional[Dict[str, PersonaFieldUpdate]] = None
@@ -346,3 +349,13 @@ class SyntheticTestingResponse(BaseModel):
     results: List[SyntheticResultItem]
     aggregated: Dict[str, AggregatedAssetResult]
     metadata: Dict[str, Any]
+
+class GenerationRequest(BaseModel):
+    segment_name: str
+    segment_description: str
+    brand_id: int
+
+class SaveGeneratedPersonaRequest(BaseModel):
+    brand_id: int
+    segment_name: str
+    persona_profile: Dict[str, Any]

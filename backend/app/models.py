@@ -80,6 +80,7 @@ class Persona(Base):
     channel_use = Column(Text, nullable=True)
     decision_style = Column(String, nullable=True)
     core_insight = Column(Text, nullable=True)
+    additional_context = Column(JSON, nullable=True)
     # Store all generated data as a single JSON string for flexibility
     full_persona_json = Column(Text)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)

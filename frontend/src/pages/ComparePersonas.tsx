@@ -10,8 +10,8 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   ArrowLeft, Brain, Target, Shield, MessageSquare, Activity, AlertTriangle, AlertCircle,
-  Sparkles, ChevronDown, ChevronUp, ThumbsUp, ThumbsDown, Send, Loader2,
-  Lightbulb, GitCompare, Zap, Building, Users, Briefcase
+  Sparkles, ChevronDown, ChevronUp, ThumbsUp, Send, Loader2,
+  Lightbulb, GitCompare, Zap, Building, Briefcase
 } from 'lucide-react';
 
 interface ComparisonRowProps {
