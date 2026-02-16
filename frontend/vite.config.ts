@@ -15,8 +15,8 @@ export default defineConfig({
     proxy: [
       '/cohorts', '/stats', '/health', '/api', '/simulations', '/crm'
     ].reduce((acc, path) => {
-      acc[path] = {
-        target: 'http://13.205.99.234:8001',
+      acc[path] = { 
+        target: 'http://13.205.99.234:8001', 
         changeOrigin: true,
         secure: false,
         ws: true

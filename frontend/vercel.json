@@ -5,52 +5,8 @@
       "destination": "http://13.205.99.234:8001/api/personas/"
     },
     {
-      "source": "/api/personas/:path*",
-      "destination": "http://13.205.99.234:8001/api/personas/:path*"
-    },
-    {
-      "source": "/api/brands",
-      "destination": "http://13.205.99.234:8001/api/brands"
-    },
-    {
-      "source": "/api/brands/:path*",
-      "destination": "http://13.205.99.234:8001/api/brands/:path*"
-    },
-    {
-      "source": "/api/knowledge/:path*",
-      "destination": "http://13.205.99.234:8001/api/knowledge/:path*"
-    },
-    {
-      "source": "/api/chat",
-      "destination": "http://13.205.99.234:8001/api/chat"
-    },
-    {
-      "source": "/api/chat/:path*",
-      "destination": "http://13.205.99.234:8001/api/chat/:path*"
-    },
-    {
-      "source": "/api/assets",
-      "destination": "http://13.205.99.234:8001/api/assets"
-    },
-    {
-      "source": "/api/assets/:path*",
-      "destination": "http://13.205.99.234:8001/api/assets/:path*"
-    },
-    {
-      "source": "/api/synthetic-testing",
-      "destination": "http://13.205.99.234:8001/api/synthetic-testing"
-    },
-    {
-      "source": "/api/synthetic-testing/:path*",
-      "destination": "http://13.205.99.234:8001/api/synthetic-testing/:path*"
-    },
-    {
-      "source": "/api/synthetic",
-      "destination": "http://13.205.99.234:8001/api/synthetic-testing"
-    },
-    {
-      "source": "/api/synthetic/:path*",
-      "destination": "http://13.205.99.234:8001/api/synthetic-testing/:path*"
+      "source": "/api/personas/",
+      "destination": "http://13.205.99.234:8001/api/personas/"
     },
     {
       "source": "/api/:path*",
