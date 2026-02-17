@@ -61,7 +61,7 @@ def get_text_embedding(text: str) -> Optional[List[float]]:
     
     try:
         response = client.embeddings.create(
-            model="text-embedding-3-small",
+            model=os.getenv("AZURE_OPENAI_EMBEDDING_DEPLOYMENT", "text-embedding-3-large"),
             input=text[:2000]  # Limit text length
         )
         embedding = response.data[0].embedding

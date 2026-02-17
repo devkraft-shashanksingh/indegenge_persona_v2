@@ -71,17 +71,7 @@ def chunk_text(text: str, chunk_size: int = 800, overlap: int = 100) -> List[str
     return chunks
 
 
-def _get_openai_client() -> Optional[OpenAI]:
-    """Lazily initialize an OpenAI client when an API key is available."""
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        return None
-
-    global _openai_client
-    if _openai_client is None:
-        _openai_client = OpenAI(api_key=api_key)
-
-    return _openai_client
+from .utils import get_openai_client as _get_openai_client, MODEL_NAME
 
 def extract_text(filepath: str) -> str:
     """
@@ -139,7 +129,7 @@ def classify_document(text: str) -> str:
 
     try:
         response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model=MODEL_NAME,
             messages=[
                 {"role": "system", "content": "You are a helpful assistant that classifies documents."},
                 {"role": "user", "content": prompt}

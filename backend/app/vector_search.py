@@ -4,15 +4,10 @@ import time
 from typing import Dict, List, Optional
 import os
 import openai
+from .utils import MODEL_NAME
 
 logger = logging.getLogger(__name__)
-def _get_openai_client():
-    """Configure OpenAI client with key from environment."""
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        logger.warning("OpenAI API key not found (OPENAI_API_KEY).")
-        return None
-    return openai.OpenAI(api_key=api_key)
+from .utils import get_openai_client as _get_openai_client
 
 def search_brand_chunks(
     brand_id: int,
@@ -83,7 +78,7 @@ def search_brand_chunks(
 CRITICAL: You MUST include citations for every factual claim or quote using the format [1], [2], etc.
 The citations must link to the annotations in your response. 
 If you don't find relevant information in the files, state that clearly.""",
-            model="gpt-4o",  # Use gpt-4o for speed and better retrieval
+            model=MODEL_NAME,  # Use shared model name from config
             tools=[{"type": "file_search"}]
         )
         logger.info(f"[DEBUG] search_brand_chunks: assistant created in {time.time()-t2:.1f}s")
