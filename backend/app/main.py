@@ -7,7 +7,7 @@ import uvicorn
 import time
 
 from .core.config import settings
-from .routers import personas, brands, chat, synthetic, analysis
+from .routers import personas, brands, chat, synthetic, analysis, panel_feedback, simulations
 from .database import get_db
 from . import models, segments, disease_packs, crud
 from sqlalchemy.orm import Session
@@ -32,7 +32,7 @@ app = FastAPI(
 if settings.BACKEND_CORS_ORIGINS:
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=[str(origin) for origin in settings.BACKEND_CORS_ORIGINS],
+        allow_origins=["*"],
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -60,6 +60,8 @@ app.include_router(brands.router)
 app.include_router(chat.router)
 app.include_router(synthetic.router)
 app.include_router(analysis.router)
+app.include_router(panel_feedback.router)
+app.include_router(simulations.router)
 
 @app.get("/")
 async def root():
@@ -102,4 +104,4 @@ def list_disease_packs():
     return list(disease_packs.DISEASE_PACKS.values())
 
 if __name__ == "__main__":
-    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("app.main:app", host=settings.BACKEND_HOST, port=settings.BACKEND_PORT, reload=True)

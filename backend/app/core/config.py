@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     
     # ENVIRONMENT
     ENVIRONMENT: str = "development"
+    BACKEND_HOST: str = "0.0.0.0"
+    BACKEND_PORT: int = 8000
     
     # CORS
     BACKEND_CORS_ORIGINS: List[Union[str, AnyHttpUrl]] = [
@@ -33,6 +35,14 @@ class Settings(BaseSettings):
         if isinstance(v, str) and not v.startswith("["):
             return [i.strip() for i in v.split(",")]
         elif isinstance(v, (list, str)):
+            # If it's a JSON string representation of a list, Pydantic/JSON parsing might handle it,
+            # but sometimes it comes as a raw string.
+            import json
+            if isinstance(v, str) and v.startswith("["):
+                try:
+                    return json.loads(v)
+                except json.JSONDecodeError:
+                    return v.split(",")
             return v
         raise ValueError(v)
 

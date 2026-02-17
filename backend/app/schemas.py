@@ -350,6 +350,23 @@ class SyntheticTestingResponse(BaseModel):
     aggregated: Dict[str, AggregatedAssetResult]
     metadata: Dict[str, Any]
 
+class SyntheticTestRunCreate(BaseModel):
+    name: str
+    persona_ids: List[int]
+    assets: List[Dict[str, Any]]
+    results: SyntheticTestingResponse
+
+class SyntheticTestRun(BaseModel):
+    id: int
+    name: str
+    persona_ids: List[int]
+    assets: List[Dict[str, Any]]
+    results: SyntheticTestingResponse
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True
+
 class GenerationRequest(BaseModel):
     segment_name: str
     segment_description: str
@@ -359,3 +376,16 @@ class SaveGeneratedPersonaRequest(BaseModel):
     brand_id: int
     segment_name: str
     persona_profile: Dict[str, Any]
+
+# === Panel Feedback Schemas ===
+
+class PanelFeedbackRequest(BaseModel):
+    persona_ids: List[int]
+    stimulus_text: str
+    stimulus_images: Optional[List[Dict[str, Any]]] = None
+    content_type: str = "text"
+
+class PanelFeedbackResponse(BaseModel):
+    persona_cards: List[Dict[str, Any]]
+    summary: Dict[str, Any]
+    metadata: Dict[str, Any]

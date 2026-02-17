@@ -846,7 +846,7 @@ export const SyntheticTestingAPI = {
     personaIds: number[],
     assets: Array<{ id: string; name: string; image_data?: string; text_content: string }>
   ): Promise<SyntheticTestingResponse> =>
-    api.post('/api/synthetic-testing/analyze', {
+    api.post('/api/synthetic/analyze', {
       persona_ids: personaIds,
       assets: assets
     }).then(r => r.data),
