@@ -7,7 +7,8 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "PharmaPersonaSim"
     
     # DATABASE
-    DATABASE_URL: str = "sqlite:///./pharma_personas.db"
+    DATABASE_URL: str
+    DB_SCHEMA: str = "persona"
     
     # SECURITY
     SECRET_KEY: str = "supersecretkey_change_in_production"
