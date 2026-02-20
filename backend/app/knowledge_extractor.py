@@ -11,7 +11,7 @@ import uuid
 from typing import Dict, List, Optional, Any
 from datetime import datetime
 
-from openai import OpenAI
+from openai import OpenAI, AzureOpenAI
 import os
 from dotenv import load_dotenv
 from sqlalchemy.orm import Session
@@ -55,13 +55,27 @@ def get_text_embedding(text: str) -> Optional[List[float]]:
     if cache_key in _embedding_cache:
         return _embedding_cache[cache_key]
     
-    client = get_openai_client()
-    if not client:
-        return None
-    
+    # Use the secondary Azure OpenAI endpoint configured for embeddings
     try:
+        azure_endpoint_v2 = os.getenv("AZURE_OPENAI_ENDPOINT_V2")
+        api_key_east = os.getenv("AZURE_OPENAI_API_KEY_EAST")
+        
+        if azure_endpoint_v2 and api_key_east:
+            # Create a dedicated client for embeddings
+            client = AzureOpenAI(
+                api_key=api_key_east,
+                api_version="2024-02-15-preview",  # standard embedding api version used
+                azure_endpoint=azure_endpoint_v2
+            )
+        else:
+            # Fallback to the default client
+            client = get_openai_client()
+            
+        if not client:
+            return None
+            
         response = client.embeddings.create(
-            model=os.getenv("AZURE_OPENAI_EMBEDDING_DEPLOYMENT", "text-embedding-3-large"),
+            model=os.getenv("AZURE_OPENAI_EMBEDDING_DEPLOYMENT", "text-embedding-ada-002"),
             input=text[:2000]  # Limit text length
         )
         embedding = response.data[0].embedding
