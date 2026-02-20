@@ -46,10 +46,10 @@ class PersonaBase(BaseModel):
     name: str
     avatar_url: Optional[str] = None  # DALL-E 3 generated avatar image URL
     persona_type: str = "Patient"
-    age: Optional[int] = None
-    gender: Optional[str] = None
-    condition: Optional[str] = None
-    location: Optional[str] = None
+    age: int
+    gender: str
+    condition: str
+    location: str
     full_persona_json: str
     brand_id: Optional[int] = None
     persona_subtype: Optional[str] = None
