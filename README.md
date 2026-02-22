@@ -56,16 +56,9 @@ PharmaPersonaSim uses Large Language Models to create dynamic AI personas (patie
    ```
 
 3. **Manage the containers:**
-   From the repository root (where `docker-compose.yml` is located):
+   From the repository root (where `docker-compose.yml` is located), run the following command to rebuild and start the services:
    ```bash
-   # Build the images (required after code changes)
-   sudo docker-compose build
-
-   # Start the containers
-   sudo docker-compose up
-
-   # Stop the containers
-   sudo docker-compose down
+   sudo docker compose -f docker-compose.yml pull && sudo docker compose -f docker-compose.yml up -d && sudo docker rmi -f $(sudo docker images -a -q) && sudo docker builder prune -f
    ```
 
 This will run:
