@@ -55,10 +55,17 @@ PharmaPersonaSim uses Large Language Models to create dynamic AI personas (patie
    # Edit backend/.env and add your required API keys
    ```
 
-3. **Start the containers:**
+3. **Manage the containers:**
    From the repository root (where `docker-compose.yml` is located):
    ```bash
-   docker-compose up --build
+   # Build the images (required after code changes)
+   sudo docker-compose build
+
+   # Start the containers
+   sudo docker-compose up
+
+   # Stop the containers
+   sudo docker-compose down
    ```
 
 This will run:
