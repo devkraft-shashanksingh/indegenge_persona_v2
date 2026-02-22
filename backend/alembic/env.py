@@ -44,6 +44,11 @@ def run_migrations_offline() -> None:
 
     """
     url = settings.DATABASE_URL # Use settings directly
+    def include_name(name, type_, parent_names):
+        if type_ == "table":
+            return parent_names.get("schema_name", None) == settings.DB_SCHEMA
+        return True
+
     context.configure(
         url=url,
         target_metadata=target_metadata,
@@ -51,6 +56,7 @@ def run_migrations_offline() -> None:
         dialect_opts={"paramstyle": "named"},
         include_schemas=True,
         version_table_schema=settings.DB_SCHEMA,
+        include_name=include_name,
     )
 
     with context.begin_transaction():
@@ -74,11 +80,22 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
+        if settings.DB_SCHEMA:
+            from sqlalchemy import text
+            connection.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{settings.DB_SCHEMA}"'))
+            connection.commit()
+            
+        def include_name(name, type_, parent_names):
+            if type_ == "table":
+                return parent_names.get("schema_name", None) == settings.DB_SCHEMA
+            return True
+
         context.configure(
             connection=connection,
             target_metadata=target_metadata,
             include_schemas=True,
-            version_table_schema="persona",
+            version_table_schema=settings.DB_SCHEMA,
+            include_name=include_name,
         )
 
         with context.begin_transaction():

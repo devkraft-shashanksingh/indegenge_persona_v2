@@ -138,6 +138,13 @@ All endpoints are prefixed with `/persona-apis`. For comprehensive details, chec
 | `DATABASE_URL` | Yes | PostgreSQL connection string |
 | `DB_SCHEMA` | No | Schema name (default: persona) |
 
+### Dedicated Schema (If Using RDS Shared DB)
+
+If you are using a shared database like an RDS instance, ensure you specify a dedicated schema in your `.env` to prevent conflicts:
+```env
+DB_SCHEMA=persona
+```
+
 *See `backend/.env.example` for a full list of required variables, supporting logic for Azure OpenAI, logging, and other settings.*
 
 ## Important Notes
