@@ -1,6 +1,6 @@
-# PharmaPersonaSim 🏥
+# PharmaPersonaSim Backend 🏥
 
-AI-powered pharmaceutical persona simulation platform that transforms patient insights into actionable market intelligence.
+AI-powered pharmaceutical persona simulation platform that transforms patient insights into actionable market intelligence. This repository contains the backend service and API.
 
 ## What It Does
 
@@ -34,113 +34,118 @@ PharmaPersonaSim uses Large Language Models to create dynamic AI personas (patie
 - Qualitative feedback generation (What works, Challenges, Considerations)
 - Aggregated insights across multiple personas
 
-### Analytics Dashboard
-- Individual persona response breakdown
-- Summary statistics and AI-generated insights
-- Interactive data visualization and export
-
-## Quick Start
+## Quick Start (Docker - Recommended)
 
 ### Prerequisites
-- Python 3.10+
-- Node.js 18+
-- OpenAI API key
+- Docker and Docker Compose
+- OpenAI API key and Azure OpenAI configuration (if applicable)
+
+### Setup
+
+1. **Clone the repository:**
+   ```bash
+   git clone <repository-url>
+   cd indegenge_persona_v2
+   ```
+
+2. **Configure Environment:**
+   Create a `.env` file in the `backend/` directory by copying the example:
+   ```bash
+   cp backend/.env.example backend/.env
+   # Edit backend/.env and add your required API keys
+   ```
+
+3. **Start the containers:**
+   From the repository root (where `docker-compose.yml` is located):
+   ```bash
+   docker-compose up --build
+   ```
+
+This will run:
+- A PostgreSQL database on port `5435`
+- The FastAPI backend on port `8000`
+
+**Access:**
+- Backend API Base (Health check): `http://localhost:8000/persona-apis/`
+- API Docs (Swagger UI): `http://localhost:8000/persona-apis/docs`
+- ReDoc: `http://localhost:8000/persona-apis/redoc`
+
+## Local Development (Without Docker)
+
+### Prerequisites
+- Python 3.11+
+- PostgreSQL database
 
 ### Setup
 
 ```bash
-# Clone and navigate
-git clone https://github.com/ishankgp/indegenge_persona.git
-cd indegenge_persona/pharmapersonasim
-
 # Backend setup
 cd backend
 python -m venv venv
-venv\Scripts\activate  # Windows | source venv/bin/activate (Mac/Linux)
+source venv/bin/activate  # Mac/Linux | venv\Scripts\activate (Windows)
 pip install -r requirements.txt
-cd ..
 
-# Frontend setup
-cd frontend
-npm install
-cd ..
+# Run migrations (ensure your local DB is running and configured via DATABASE_URL)
+alembic upgrade head
 
-# Configure environment
-echo "OPENAI_API_KEY=your_key_here" > .env
-
-# Run
-python run_app.py
+# Run server
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
-
-**Access:**
-- Frontend: http://localhost:5173
-- Backend API: http://127.0.0.1:8000
-- API Docs: http://127.0.0.1:8000/docs
 
 ## Project Structure
 
-```
-pharmapersonasim/
+```text
+indegenge_persona_v2/
 ├── backend/
 │   ├── app/
-│   │   ├── main.py           # FastAPI endpoints
-│   │   ├── models.py         # Database models
-│   │   ├── persona_engine.py # AI persona generation
-│   │   ├── cohort_engine.py  # Cohort analysis
-│   │   └── synthetic_testing_engine.py # Synthetic testing logic
-│   └── requirements.txt
-├── frontend/
-│   ├── src/
-│   │   ├── pages/            # Application pages
-│   │   ├── components/       # UI components
-│   │   └── lib/api.ts        # API client
-│   └── package.json
-└── run_app.py                # App launcher
+│   │   ├── main.py           # FastAPI entry point & core routing
+│   │   ├── models.py         # SQLAlchemy database models
+│   │   ├── routers/          # API route definitions
+│   │   ├── core/             # Configuration and utilities
+│   │   └── ...               # Various engine components
+│   ├── alembic/              # Database migration scripts
+│   ├── Dockerfile            # Container definition
+│   └── requirements.txt      # Python dependencies
+└── docker-compose.yml        # Multi-container orchestration
 ```
 
 ## Tech Stack
 
-**Backend:** FastAPI, SQLAlchemy, OpenAI API, Google GenAI  
-**Frontend:** React, TypeScript, Vite, Tailwind CSS, shadcn/ui  
-**Database:** SQLite (dev) / PostgreSQL (prod)
-
-## Deployment
-
-**Frontend (Vercel):** Deployed at production URL  
-**Backend (Railway):** See [DEPLOYMENT.md](DEPLOYMENT.md) for instructions
-
-Set `VITE_API_URL` in Vercel to your backend URL after deployment.
+**Backend:** FastAPI, SQLAlchemy, Alembic  
+**Database:** PostgreSQL  
+**AI Services:** OpenAI API, Azure OpenAI  
+**Containerization:** Docker, Docker Compose
 
 ## API Endpoints
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/personas/` | GET | List all personas |
-| `/personas/` | POST | Create persona |
-| `/cohorts/analyze` | POST | Run cohort simulation |
-| `/api/brands` | GET/POST | Brand management |
-| `/health` | GET | Health check |
+All endpoints are prefixed with `/persona-apis`. For comprehensive details, check the interactive Swagger UI at `/persona-apis/docs`.
 
-## Documentation
-
-- [DEPLOYMENT.md](DEPLOYMENT.md) - Deployment guide
-- [DEV_GUIDE.md](DEV_GUIDE.md) - Developer setup
-- [DATA_NEEDED_FROM_EXPERTS.md](DATA_NEEDED_FROM_EXPERTS.md) - Expert data requirements
+| Endpoint Prefix | Description |
+|-----------------|-------------|
+| `/personas/` | Persona generation and management |
+| `/cohorts/` | Cohort simulation and analysis |
+| `/brands/` | Brand document management and indexing |
+| `/synthetic/` | Synthetic testing logic |
+| `/simulations/` | Simulation management |
+| `/panel-feedback/` | Panel feedback analysis |
+| `/analysis/` | Analytics and deep search |
 
 ## Environment Variables
 
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `OPENAI_API_KEY` | Yes | OpenAI API key |
-| `VITE_API_URL` | Prod | Backend URL for production |
-| `DATABASE_URL` | Prod | PostgreSQL connection string |
+| `DATABASE_URL` | Yes | PostgreSQL connection string |
+| `DB_SCHEMA` | No | Schema name (default: persona) |
+
+*See `backend/.env.example` for a full list of required variables, supporting logic for Azure OpenAI, logging, and other settings.*
 
 ## Important Notes
 
 ⚠️ **Research Tool** - Validate results with actual patient/HCP research before critical decisions  
 ⚠️ **Compliance** - Content must pass MLR review; this tool doesn't replace regulatory compliance  
 ⚠️ **Data Privacy** - Don't input actual PHI; use synthetic/anonymized data only  
-⚠️ **API Costs** - Monitor OpenAI usage at platform.openai.com/usage
+⚠️ **API Costs** - Monitor OpenAI usage costs at platform.openai.com/usage or your Azure portal.
 
 ## License
 

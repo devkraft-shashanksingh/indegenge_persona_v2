@@ -64,7 +64,7 @@ def get_text_embedding(text: str) -> Optional[List[float]]:
             # Create a dedicated client for embeddings
             client = AzureOpenAI(
                 api_key=api_key_east,
-                api_version="2024-02-15-preview",  # standard embedding api version used
+                api_version="2024-08-01-preview",  # matched with semantic-search-backend
                 azure_endpoint=azure_endpoint_v2
             )
         else:
@@ -75,7 +75,7 @@ def get_text_embedding(text: str) -> Optional[List[float]]:
             return None
             
         response = client.embeddings.create(
-            model=os.getenv("AZURE_OPENAI_EMBEDDING_DEPLOYMENT", "text-embedding-ada-002"),
+            model=os.getenv("AZURE_OPENAI_EMBEDDING_DEPLOYMENT", "text-embedding-3-large"),
             input=text[:2000]  # Limit text length
         )
         embedding = response.data[0].embedding
