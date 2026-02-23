@@ -32,3 +32,27 @@ def create_panel_feedback(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    
+
+@router.post("/v2", response_model=schemas.PanelFeedbackResponseV2)
+def create_panel_feedback(
+    request: schemas.PanelFeedbackRequest,
+    db: Session = Depends(get_db)
+) -> Any:
+    """
+    Run a panel feedback analysis for the given personas.
+    """
+    try:
+        result = panel_feedback_engine.run_panel_feedback_analysis_v2(
+            persona_ids=request.persona_ids,
+            stimulus_text=request.stimulus_text,
+            stimulus_images=request.stimulus_images,
+            content_type=request.content_type,
+            db=db
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+

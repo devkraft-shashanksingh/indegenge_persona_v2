@@ -15,6 +15,8 @@ and actionable recommendations.
 import os
 import json
 import logging
+import json
+import uuid
 import concurrent.futures
 from typing import Dict, Any, List, Optional
 from datetime import datetime
@@ -501,4 +503,362 @@ def run_panel_feedback_analysis(
     }
     
     logger.info(f"✅ Panel feedback analysis complete for {len(personas)} personas")
+    return result
+
+
+
+
+def run_panel_feedback_analysis_v2(
+    persona_ids: List[int],
+    stimulus_text: str,
+    stimulus_images: Optional[List[Dict]] = None,
+    content_type: str = "text",
+    db=None
+) -> Dict[str, Any]:
+    """
+    Panel feedback v2 (FORCED CARTESIAN MODE):
+
+    ✅ If stimulus_images is a non-empty list:
+       persona_cards = (number of personas) x (number of images)
+       Example: 3 personas, 2 images => 6 cards
+       Each card analyzes exactly ONE image and includes persona_id + image_id/url.
+
+    ✅ If no images:
+       old behavior: 1 card per persona
+
+    FIXES:
+    ✅ Per-card summaries (NxM) generated concurrently (max_workers=5)
+    ✅ Output grouped by IMAGE:
+       images: [
+         { image_id, image_url, image_url_str, cards: [ {card + summary}, ... ] },
+         ...
+       ]
+    ✅ Each card includes its own summary inline (no separate summary_by_card needed for UI)
+    ✅ JSON-safe response to avoid FastAPI 500 / anyio.EndOfStream
+    ✅ card_key is UUID (generated uuid4) but returned as string in JSON (required)
+    """
+
+    import json
+    import uuid
+    from datetime import datetime
+
+    def _json_safe(x):
+        if x is None:
+            return None
+        if isinstance(x, (str, int, float, bool)):
+            return x
+        if isinstance(x, uuid.UUID):
+            return str(x)
+        if isinstance(x, datetime):
+            return x.isoformat()
+        if isinstance(x, dict):
+            return {str(_json_safe(k)): _json_safe(v) for k, v in x.items()}
+        if isinstance(x, (list, tuple, set)):
+            return [_json_safe(v) for v in list(x)]
+        return str(x)
+
+    if not persona_ids:
+        raise ValueError("At least one persona ID is required")
+
+    # -------------------------------
+    # Fetch personas from database
+    # -------------------------------
+    personas: List[Dict[str, Any]] = []
+    for persona_id in persona_ids:
+        persona = crud.get_persona(db, persona_id)
+        if persona:
+            personas.append({
+                "id": persona.id,
+                "name": persona.name,
+                "age": persona.age,
+                "gender": persona.gender,
+                "condition": persona.condition,
+                "location": persona.location,
+                "persona_type": persona.persona_type,
+                "avatar_url": getattr(persona, "avatar_url", None),
+                "full_persona_json": persona.full_persona_json,
+            })
+
+    if not personas:
+        raise ValueError("No valid personas found for the provided IDs")
+
+    logger.info(f"🎯 Running panel feedback for {len(personas)} personas")
+
+    # -------------------------------
+    # Debug logs
+    # -------------------------------
+    logger.info(
+        f"[panel-feedback-v2] content_type={content_type} | "
+        f"stimulus_images_type={type(stimulus_images)} | "
+        f"stimulus_images_len={(len(stimulus_images) if isinstance(stimulus_images, list) else 'NA')} | "
+        f"stimulus_images_truthy={bool(stimulus_images)}"
+    )
+    if isinstance(stimulus_images, list) and stimulus_images:
+        first = stimulus_images[0]
+        logger.info(
+            f"[panel-feedback-v2] first_image_type={type(first)} | "
+            f"first_image_keys={list(first.keys()) if isinstance(first, dict) else 'NA'}"
+        )
+
+    # -------------------------------
+    # Decide NxM purely on images presence
+    # -------------------------------
+    has_images = isinstance(stimulus_images, list) and len(stimulus_images) > 0
+
+    # -------------------------------
+    # Build jobs (assign card_number + card_key BEFORE LLM call)
+    # Order matches final sort: image first, then persona
+    # -------------------------------
+    jobs: List[tuple] = []
+
+    if has_images:
+        total_cards = len(personas) * len(stimulus_images)
+        logger.info(
+            f"🧩 Running FORCED CARTESIAN panel: {len(personas)} personas x "
+            f"{len(stimulus_images)} images -> {total_cards} persona_cards"
+        )
+
+        for img_idx, img in enumerate(stimulus_images):
+            for persona_idx, persona_dict in enumerate(personas):
+                card_number = (img_idx * len(personas)) + persona_idx + 1
+
+                image_id = img.get("id") if isinstance(img, dict) else None
+                image_url = img.get("url") if isinstance(img, dict) else None
+                image_url_str = img.get("image_url_str") if isinstance(img, dict) else None
+
+                image_id_safe = str(image_id) if isinstance(image_id, uuid.UUID) else image_id
+
+                # ✅ card_key is UUID (store as UUID internally)
+                card_key = uuid.uuid4()
+
+                jobs.append((
+                    persona_idx,       # persona_index
+                    img_idx,           # image_index
+                    persona_dict,      # persona_dict
+                    img,               # single_img
+                    card_number,       # card_number
+                    card_key,          # card_key (UUID)
+                    image_id_safe,     # image_id
+                    image_url,         # image_url
+                    image_url_str      # image_url_str
+                ))
+    else:
+        logger.info("🧩 Running OLD panel (no images): 1 card per persona")
+        for persona_idx, persona_dict in enumerate(personas):
+            card_number = persona_idx + 1
+            card_key = uuid.uuid4()
+            jobs.append((
+                persona_idx,
+                None,
+                persona_dict,
+                None,
+                card_number,
+                card_key,
+                None,
+                None,
+                None
+            ))
+
+    # -------------------------------
+    # Execute persona_cards in parallel
+    # -------------------------------
+    persona_cards: List[Dict[str, Any]] = []
+    max_workers = min(5, len(jobs)) if jobs else 1
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {}
+
+        for persona_index, image_index, persona_dict, single_img, card_number, card_key, image_id, image_url, image_url_str in jobs:
+            card_context = {
+                "card_number": card_number,
+                "card_key": str(card_key),  # ✅ put as string into prompt
+                "persona_id": persona_dict["id"],
+                "persona_name": persona_dict.get("name"),
+                "image_id": image_id,
+                "image_url": image_url,
+                "image_url_str": image_url_str,
+                "image_index": image_index,
+                "persona_index": persona_index,
+            }
+
+            injected_stimulus_text = (
+                "### CARD_CONTEXT (MUST RETURN AS-IS IN OUTPUT JSON)\n"
+                f"{json.dumps(_json_safe(card_context), ensure_ascii=False)}\n"
+                "### END_CARD_CONTEXT\n\n"
+                f"{stimulus_text}"
+            )
+
+            if has_images:
+                future = executor.submit(
+                    analyze_single_persona_panel,
+                    persona_dict,
+                    injected_stimulus_text,
+                    [single_img],
+                    content_type
+                )
+            else:
+                future = executor.submit(
+                    analyze_single_persona_panel,
+                    persona_dict,
+                    injected_stimulus_text,
+                    None,
+                    content_type
+                )
+
+            futures[future] = {
+                "persona_id": persona_dict["id"],
+                "persona_name": persona_dict.get("name"),
+                "persona_index": persona_index,
+                "image_index": image_index,
+                "image": single_img,
+                "card_number": card_number,
+                "card_key": card_key,  # UUID
+                "image_id": image_id,
+                "image_url": image_url,
+                "image_url_str": image_url_str,
+            }
+
+        for future in concurrent.futures.as_completed(futures):
+            meta = futures[future]
+            try:
+                result = future.result()
+
+                # enforce mapping keys on returned card
+                result["card_number"] = meta["card_number"]
+                result["card_key"] = str(meta["card_key"])  # ✅ return as string in JSON
+
+                result["persona_id"] = meta["persona_id"]
+                if meta.get("persona_name"):
+                    result["persona_name"] = meta["persona_name"]
+                result["persona_index"] = meta["persona_index"]
+
+                if has_images:
+                    result["image_index"] = meta["image_index"]
+                    if meta.get("image_id") is not None:
+                        result["image_id"] = meta["image_id"]
+                    if meta.get("image_url") is not None:
+                        result["image_url"] = meta["image_url"]
+                    if meta.get("image_url_str") is not None:
+                        result["image_url_str"] = meta["image_url_str"]
+
+                persona_cards.append(_json_safe(result))
+
+            except Exception as e:
+                logger.error(
+                    f"❌ Panel feedback failed for persona {meta['persona_id']} "
+                    f"(image_index={meta.get('image_index')}): {e}"
+                )
+
+                err_obj = {
+                    "error": str(e),
+                    "card_number": meta["card_number"],
+                    "card_key": str(meta["card_key"]),  # ✅ string
+                    "persona_id": meta["persona_id"],
+                    "persona_name": meta.get("persona_name") or f"Persona {meta['persona_id']}",
+                    "persona_index": meta.get("persona_index"),
+                }
+
+                if has_images:
+                    err_obj["image_index"] = meta["image_index"]
+                    if meta.get("image_id") is not None:
+                        err_obj["image_id"] = meta["image_id"]
+                    if meta.get("image_url") is not None:
+                        err_obj["image_url"] = meta["image_url"]
+                    if meta.get("image_url_str") is not None:
+                        err_obj["image_url_str"] = meta["image_url_str"]
+
+                persona_cards.append(_json_safe(err_obj))
+
+    # Ordering: image first, then persona
+    if has_images:
+        persona_cards.sort(key=lambda x: (x.get("image_index", 0), x.get("persona_index", 0)))
+    else:
+        persona_cards.sort(key=lambda x: x.get("persona_id", 0))
+
+    # -------------------------------
+    # PER-CARD SUMMARY (NxM) - CONCURRENT (max_workers=5)
+    # -------------------------------
+    logger.info("📊 Synthesizing PER-CARD summaries (concurrent)...")
+
+    # build lookup by card_key so we can attach summary into the same card
+    summary_lookup: Dict[str, Any] = {}
+    summary_workers = min(5, len(persona_cards)) if persona_cards else 1
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=summary_workers) as sum_executor:
+        sum_futures = {}
+
+        for c in persona_cards:
+            f = sum_executor.submit(synthesize_panel_summary, [c], stimulus_text)
+            sum_futures[f] = c.get("card_key")
+
+        for f in concurrent.futures.as_completed(sum_futures):
+            card_key_str = sum_futures[f]
+            try:
+                summary_lookup[card_key_str] = _json_safe(f.result())
+            except Exception as e:
+                logger.error(f"❌ Per-card summary failed for card_key={card_key_str}: {e}")
+                summary_lookup[card_key_str] = {"summary_error": str(e)}
+
+    # attach summary directly to each persona card
+    for c in persona_cards:
+        ck = c.get("card_key")
+        c["summary"] = summary_lookup.get(ck)
+
+    # -------------------------------
+    # GROUP RESPONSE BY IMAGE
+    # images: [{image_id, image_url, image_url_str, cards:[...]}]
+    # -------------------------------
+    images_grouped: Dict[str, Dict[str, Any]] = {}
+
+    if has_images:
+        for card in persona_cards:
+            img_id = card.get("image_id") or "no_image"
+            if img_id not in images_grouped:
+                images_grouped[img_id] = {
+                    "image_id": img_id,
+                    "image_url": card.get("image_url"),
+                    "image_url_str": card.get("image_url_str"),
+                    "image_index": card.get("image_index", 0),
+                    "cards": []
+                }
+            images_grouped[img_id]["cards"].append(card)
+
+        images_list = list(images_grouped.values())
+        images_list.sort(key=lambda x: x.get("image_index", 0))
+
+        # inside each image, sort cards by persona_index (persona 1,2,3 order)
+        for img_obj in images_list:
+            img_obj["cards"].sort(key=lambda c: c.get("persona_index", 0))
+            img_obj.pop("image_index", None)  # remove internal helper field
+    else:
+        # no images => one pseudo-image bucket
+        images_list = [{
+            "image_id": None,
+            "image_url": None,
+            "image_url_str": None,
+            "cards": persona_cards
+        }]
+
+    result = {
+        "images": images_list,
+        "metadata": {
+            "persona_count": len(personas),
+            "content_type": content_type,
+            "created_at": datetime.now().isoformat(),
+            "cards_count": len(persona_cards),
+            "image_mapped": bool(has_images),
+            "image_count": len(stimulus_images) if has_images else 0,
+            "mapping_mode": "forced_cartesian" if has_images else "per_persona",
+        }
+    }
+
+    # FINAL safety: ensure JSON serializable
+    result = _json_safe(result)
+    try:
+        json.dumps(result)
+    except Exception as e:
+        logger.exception(f"❌ Final response not JSON serializable: {e}")
+        raise
+
+    logger.info(f"✅ Panel feedback analysis complete for {len(persona_cards)} persona_cards")
     return result
