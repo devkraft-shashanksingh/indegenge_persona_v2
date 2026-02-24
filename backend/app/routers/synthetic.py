@@ -76,3 +76,34 @@ def get_synthetic_run(
     if run is None:
         raise HTTPException(status_code=404, detail="Synthetic test run not found")
     return run
+
+
+
+
+
+@router.post("/analyze/v1", response_model=schemas.SyntheticTestingResponseV2)
+async def synthetic_testing_analyze(
+    request: schemas.SyntheticTestingRequestV2,
+    db: Session = Depends(get_db)
+):
+    """
+    Run synthetic testing of marketing assets against selected personas.
+    """
+    assets_data = [
+        {
+            "id": asset.id,
+            "name": asset.name,
+            "data": asset.url,
+            "text": asset.text_content,
+            "url_image_str":asset.image_url_str
+        }
+        for asset in request.assets
+    ]
+    
+    return synthetic_testing_engine.run_synthetic_testingV2(
+        request.campaign_id,
+        request.task_id,
+        request.persona_ids,
+        assets_data,
+        db
+    )

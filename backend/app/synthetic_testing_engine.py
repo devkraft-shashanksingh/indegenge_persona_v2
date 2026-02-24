@@ -14,6 +14,7 @@ import base64
 import concurrent.futures
 from typing import Dict, Any, List, Optional
 from datetime import datetime
+import requests
 
 from .utils import get_openai_client, MODEL_NAME
 from . import crud
@@ -207,6 +208,94 @@ def analyze_single_asset_persona(
         "feedback": result.get("feedback", {})
     }
 
+def image_url_to_base64(url: str, timeout: int = 20) -> Dict[str, Optional[str]]:
+    r = requests.get(url, timeout=timeout)
+    r.raise_for_status()
+
+    content_type = (r.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+
+    if content_type in ("image/png", "image/jpeg", "image/jpg", "image/webp"):
+        mime = "image/jpeg" if content_type == "image/jpg" else content_type
+    else:
+        mime = "image/png"
+
+    b64 = base64.b64encode(r.content).decode("utf-8")
+    return {"base64": b64, "mime": mime}
+
+
+def analyze_single_asset_persona_via_url(
+    persona_dict: Dict[str, Any],
+    asset: Dict[str, Any]
+) -> Dict[str, Any]:
+
+    asset_name = asset.get("name", "Unnamed Asset")
+    text_content = asset.get("text", "")
+
+    image_data = None
+    mime = "image/png"
+
+    asset_url = asset.get("url")
+    if asset_url:
+        try:
+            out = image_url_to_base64(asset_url)
+            image_data = out["base64"]
+            mime = out["mime"] or "image/png"
+        except Exception as e:
+            return {
+                "persona_id": persona_dict["id"],
+                "persona_name": persona_dict.get("name"),
+                "asset_id": asset.get("id"),
+                "asset_url": asset_url,
+                "error": f"Failed to fetch/encode image url: {str(e)}"
+            }
+
+    prompt = create_synthetic_prompt(
+        persona_dict,
+        asset_name,
+        text_content,
+        has_image=bool(image_data)
+    )
+
+    messages = [{"role": "user", "content": [{"type": "text", "text": prompt}]}]
+
+    if image_data:
+        messages[0]["content"].append({
+            "type": "image_url",
+            "image_url": {"url": f"data:{mime};base64,{image_data}"}
+        })
+
+    result = _chat_json_synthetic(messages)
+
+    if "error" in result:
+        return {
+            "persona_id": persona_dict["id"],
+            "persona_name": persona_dict.get("name"),
+            "asset_id": asset.get("id"),
+            "asset_url": asset_url,
+            "error": result["error"]
+        }
+
+    scores = result.get("scores", {}) or {}
+    total_score = sum(scores.values()) if scores else 0
+    avg_score = (total_score / 5.0) if scores else 0
+    preference_pct = int(((avg_score - 1) / 6.0) * 100) if avg_score >= 1 else 0
+
+    if preference_pct < 0:
+        preference_pct = 0
+    if preference_pct > 100:
+        preference_pct = 100
+
+    return {
+        "persona_id": persona_dict["id"],
+        "persona_name": persona_dict["name"],
+        "asset_id": asset.get("id"),
+        "asset_url": asset_url,
+        "scores": scores,
+        "overall_preference_score": preference_pct,
+        "feedback": result.get("feedback", {}) or {}
+    }
+
+
 def run_synthetic_testing(
     persona_ids: List[int],
     assets: List[Dict[str, Any]],
@@ -311,3 +400,169 @@ def run_synthetic_testing(
         import traceback
         logger.error(f"Global synthetic testing error: {e}\n{traceback.format_exc()}")
         raise e
+
+
+def run_synthetic_testingV2(
+    campaign_id: str,
+    task_id: str,
+    persona_ids: List[int],
+    assets: List[Dict[str, Any]],
+    db=None
+) -> Dict[str, Any]:
+
+    try:
+        personas = []
+        for pid in persona_ids:
+            p = crud.get_persona(db, pid)
+            if p:
+                personas.append({
+                    "id": p.id,
+                    "name": p.name,
+                    "age": p.age,
+                    "gender": p.gender,
+                    "location": p.location,
+                    "condition": p.condition,
+                    "full_persona": json.loads(p.full_persona_json) if getattr(p, "full_persona_json", None) else {},
+                    "additional_context": p.additional_context or {}
+                })
+
+        if not personas:
+            return {"error": "No valid personas found"}
+
+        results_flat: List[Dict[str, Any]] = []
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            futures = []
+            for persona in personas:
+                for asset in assets:
+                    futures.append(executor.submit(analyze_single_asset_persona_via_url, persona, asset))
+
+            for future in concurrent.futures.as_completed(futures):
+                try:
+                    res = future.result()
+                    results_flat.append(res)
+                except Exception as e:
+                    import traceback
+                    logger.error(f"Analysis task failed: {e}\n{traceback.format_exc()}")
+
+        grouped_map: Dict[str, Dict[str, Any]] = {}
+
+        for asset in assets:
+            a_id = asset.get("id")
+            if not a_id:
+                continue
+
+            image_url = asset.get("data") or asset.get("image_url_str")
+            image_url_str = asset.get("name")
+
+            grouped_map[a_id] = {
+                "image_id": a_id,
+                "image_url": image_url,
+                "image_url_str": image_url_str,
+                "cards": []
+            }
+
+        for r in results_flat:
+            asset_id = r.get("asset_id")
+            if not asset_id:
+                continue
+            if asset_id not in grouped_map:
+                grouped_map[asset_id] = {
+                    "image_id": asset_id,
+                    "image_url": r.get("image_url") or r.get("asset_url"),
+                    "image_url_str": r.get("image_url_str"),
+                    "cards": []
+                }
+
+            if "error" in r:
+                card = {
+                    "persona_id": r.get("persona_id"),
+                    "persona_name": r.get("persona_name"),
+                    "image_id": asset_id,
+                    "image_url": grouped_map[asset_id].get("url"),
+                    "error": r.get("error")
+                }
+                grouped_map[asset_id]["cards"].append(card)
+                continue
+
+            persona_payload = r.get("persona", {})
+            card = {
+                "persona_id": r.get("persona_id") or persona_payload.get("id"),
+                "persona_name": r.get("persona_name") or persona_payload.get("name"),
+                "role": persona_payload.get("role") or persona_payload.get("persona_type"),
+                "segment": persona_payload.get("segment"),
+                "key_characteristics": persona_payload.get("key_characteristics") or persona_payload.get("characteristics"),
+                "avatar_url": persona_payload.get("avatar_url"),
+                "clean_read": r.get("clean_read"),
+                "key_themes": r.get("key_themes"),
+                "strengths": r.get("strengths"),
+                "weaknesses": r.get("weaknesses"),
+                "scores": r.get("scores"),
+                "overall_preference_score": r.get("overall_preference_score"),
+                "card_number": r.get("card_number"),
+                "card_key": r.get("card_key"),
+                "persona_index": r.get("persona_index"),
+                "image_index": r.get("image_index"),
+                "image_id": asset_id,
+                "image_url": grouped_map[asset_id].get("url"),
+                "image_url_str":grouped_map[asset_id].get("name"),
+                "summary": r.get("summary")
+            }
+            grouped_map[asset_id]["cards"].append(card)
+
+        grouped_results = list(grouped_map.values())
+
+        aggregated_results = {}
+        for asset in assets:
+            a_id = asset.get("id")
+            if not a_id:
+                continue
+
+            asset_responses = [r for r in results_flat if r.get("asset_id") == a_id and "error" not in r]
+            if not asset_responses:
+                continue
+
+            count = len(asset_responses)
+            avg_scores = {
+                "motivation_to_prescribe": 0.0,
+                "connection_to_story": 0.0,
+                "differentiation": 0.0,
+                "believability": 0.0,
+                "stopping_power": 0.0
+            }
+            avg_pref = 0.0
+
+            for r in asset_responses:
+                s = r.get("scores", {})
+                if not s:
+                    continue
+                for k in avg_scores:
+                    avg_scores[k] += s.get(k, 0)
+                avg_pref += r.get("overall_preference_score", 0)
+
+            for k in avg_scores:
+                avg_scores[k] = round(avg_scores[k] / count, 1) if count > 0 else 0
+
+            aggregated_results[a_id] = {
+                "asset_name": asset.get("name"),
+                "average_scores": avg_scores,
+                "average_preference": int(avg_pref / count) if count > 0 else 0,
+                "respondent_count": count
+            }
+
+        return {
+            "results": grouped_results,
+            "aggregated": aggregated_results,
+            "metadata": {
+                "campaign_id": campaign_id,
+                "task_id": task_id,
+                "personas_count": len(personas),
+                "assets_count": len(assets),
+                "timestamp": datetime.now().isoformat()
+            }
+        }
+
+    except Exception as e:
+        import traceback
+        logger.error(f"Global synthetic testing error: {e}\n{traceback.format_exc()}")
+        raise

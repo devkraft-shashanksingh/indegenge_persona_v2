@@ -509,6 +509,8 @@ def run_panel_feedback_analysis(
 
 
 def run_panel_feedback_analysis_v2(
+    campaign_id:str,
+    task_id:str,
     persona_ids: List[int],
     stimulus_text: str,
     stimulus_images: Optional[List[Dict]] = None,
@@ -847,6 +849,8 @@ def run_panel_feedback_analysis_v2(
             "created_at": datetime.now().isoformat(),
             "cards_count": len(persona_cards),
             "image_mapped": bool(has_images),
+            "campaign_id":campaign_id,
+            "task_id":task_id,
             "image_count": len(stimulus_images) if has_images else 0,
             "mapping_mode": "forced_cartesian" if has_images else "per_persona",
         }

@@ -36,7 +36,7 @@ def create_panel_feedback(
 
 @router.post("/v2", response_model=schemas.PanelFeedbackResponseV2)
 def create_panel_feedback(
-    request: schemas.PanelFeedbackRequest,
+    request: schemas.PanelFeedbackRequestV2,
     db: Session = Depends(get_db)
 ) -> Any:
     """
@@ -44,6 +44,8 @@ def create_panel_feedback(
     """
     try:
         result = panel_feedback_engine.run_panel_feedback_analysis_v2(
+            campaign_id=request.campaign_id,
+            task_id=request.task_id,
             persona_ids=request.persona_ids,
             stimulus_text=request.stimulus_text,
             stimulus_images=request.stimulus_images,
