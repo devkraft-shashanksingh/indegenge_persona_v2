@@ -420,55 +420,6 @@ class SyntheticTestingRequestV2(BaseModel):
     assets: List[SyntheticAssetV2]
 
 
-class SyntheticCardV2(BaseModel):
-    persona_id: Optional[int] = None
-    persona_name: Optional[str] = None
-    role: Optional[str] = None
-    segment: Optional[str] = None
-    key_characteristics: Optional[List[str]] = None
-    avatar_url: Optional[str] = None
-
-    clean_read: Optional[str] = None
-    key_themes: Optional[List[str]] = None
-    strengths: Optional[List[str]] = None
-    weaknesses: Optional[List[str]] = None
-
-    scores: Optional[Dict[str, float]] = None
-    overall_preference_score: Optional[float] = None
-
-    card_number: Optional[int] = None
-    card_key: Optional[str] = None
-    persona_index: Optional[int] = None
-    image_index: Optional[int] = None
-
-    image_id: Optional[str] = None
-    image_url: Optional[str] = None
-    summary: Optional[Dict[str, Any]] = None
-
-    error: Optional[str] = None
-
-
-class SyntheticImageResultV2(BaseModel):
-    image_id: str
-    image_url: Optional[str] = None
-    image_url_str: Optional[str] = None
-    cards: List[SyntheticCardV2] = []
-
-
-class SyntheticAggregatedMetricsV2(BaseModel):
-    motivation_to_prescribe: float = 0.0
-    connection_to_story: float = 0.0
-    differentiation: float = 0.0
-    believability: float = 0.0
-    stopping_power: float = 0.0
-
-
-class SyntheticAggregatedItemV2(BaseModel):
-    asset_name: Optional[str] = None
-    average_scores: SyntheticAggregatedMetricsV2 = SyntheticAggregatedMetricsV2()
-    average_preference: int = 0
-    respondent_count: int = 0
-
 
 class SyntheticTestingMetadataV2(BaseModel):
     campaign_id: str
@@ -476,6 +427,26 @@ class SyntheticTestingMetadataV2(BaseModel):
     personas_count: int
     assets_count: int
     timestamp: str
+
+class SyntheticImageResultV2(BaseModel):
+    persona_id: int
+    persona_name: str
+    asset_id: str
+    image_id: Optional[str] = None
+    image_url: Optional[str] = None
+    asset_url: Optional[str] = None
+    image_name: Optional[str] = None
+    scores: Optional[AssetScores] = None
+    overall_preference_score: Optional[int] = None
+    feedback: Optional[QualitativeFeedback] = None
+    error: Optional[str] = None
+
+class SyntheticAggregatedItemV2(BaseModel):
+    asset_name: str
+    average_scores: Dict[str, float]
+    average_preference: int
+    respondent_count: int
+
 
 
 class SyntheticTestingResponseV2(BaseModel):
