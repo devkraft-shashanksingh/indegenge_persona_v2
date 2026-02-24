@@ -234,7 +234,7 @@ def analyze_single_asset_persona_via_url(
     image_data = None
     mime = "image/png"
 
-    asset_url = asset.get("url")
+    asset_url = asset.get("data")
     if asset_url:
         try:
             out = image_url_to_base64(asset_url)
@@ -242,10 +242,13 @@ def analyze_single_asset_persona_via_url(
             mime = out["mime"] or "image/png"
         except Exception as e:
             return {
-                "persona_id": persona_dict["id"],
-                "persona_name": persona_dict.get("name"),
-                "asset_id": asset.get("id"),
-                "asset_url": asset_url,
+        "persona_id": persona_dict["id"],
+        "persona_name": persona_dict["name"],
+        "asset_id": asset.get("id"),
+        "image_id":asset.get("id"),
+        "image_name":asset.get("name"),
+        "image_url": asset.get("data"),
+        "asset_url":asset.get("data"),
                 "error": f"Failed to fetch/encode image url: {str(e)}"
             }
 
@@ -268,10 +271,13 @@ def analyze_single_asset_persona_via_url(
 
     if "error" in result:
         return {
-            "persona_id": persona_dict["id"],
-            "persona_name": persona_dict.get("name"),
-            "asset_id": asset.get("id"),
-            "asset_url": asset_url,
+             "persona_id": persona_dict["id"],
+        "persona_name": persona_dict["name"],
+        "asset_id": asset.get("id"),
+        "image_id":asset.get("id"),
+        "image_name":asset.get("name"),
+        "image_url": asset.get("data"),
+        "asset_url":asset.get("data"),
             "error": result["error"]
         }
 
@@ -289,7 +295,10 @@ def analyze_single_asset_persona_via_url(
         "persona_id": persona_dict["id"],
         "persona_name": persona_dict["name"],
         "asset_id": asset.get("id"),
-        "asset_url": asset_url,
+        "image_id":asset.get("id"),
+        "image_name":asset.get("name"),
+        "image_url": asset.get("data"),
+        "asset_url":asset.get("data"),
         "scores": scores,
         "overall_preference_score": preference_pct,
         "feedback": result.get("feedback", {}) or {}
@@ -402,126 +411,73 @@ def run_synthetic_testing(
         raise e
 
 
+
 def run_synthetic_testingV2(
-    campaign_id: str,
-    task_id: str,
+    campaign_id:str,
+    task_id:str,
     persona_ids: List[int],
     assets: List[Dict[str, Any]],
-    db=None
+    db = None
 ) -> Dict[str, Any]:
-
+    """
+    Run synthetic testing for multiple assets and personas.
+    
+    Args:
+        persona_ids: List of persona IDs
+        assets: List of dicts {id: str, name: str, data: str|None, text: str}
+    """
+    
+    # Fetch personas
     try:
         personas = []
         for pid in persona_ids:
             p = crud.get_persona(db, pid)
             if p:
                 personas.append({
-                    "id": p.id,
-                    "name": p.name,
-                    "age": p.age,
-                    "gender": p.gender,
-                    "location": p.location,
-                    "condition": p.condition,
-                    "full_persona": json.loads(p.full_persona_json) if getattr(p, "full_persona_json", None) else {},
-                    "additional_context": p.additional_context or {}
+                    'id': p.id,
+                    'name': p.name,
+                    'age': p.age,
+                    'gender': p.gender,
+                    'location': p.location,
+                    'condition': p.condition,
+                    'condition': p.condition,
+                    'full_persona': json.loads(p.full_persona_json) if getattr(p, 'full_persona_json', None) else {},
+                    'additional_context': p.additional_context or {}
                 })
-
+                
         if not personas:
             return {"error": "No valid personas found"}
 
-        results_flat: List[Dict[str, Any]] = []
-
+        results = []
+        
+        # Process all combinations in parallel
         with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
             futures = []
             for persona in personas:
                 for asset in assets:
-                    futures.append(executor.submit(analyze_single_asset_persona_via_url, persona, asset))
-
+                    futures.append(
+                        executor.submit(analyze_single_asset_persona_via_url, persona, asset)
+                    )
+                    
             for future in concurrent.futures.as_completed(futures):
                 try:
                     res = future.result()
-                    results_flat.append(res)
+                    results.append(res)
                 except Exception as e:
                     import traceback
                     logger.error(f"Analysis task failed: {e}\n{traceback.format_exc()}")
 
-        grouped_map: Dict[str, Dict[str, Any]] = {}
-
+        # Aggregation
+        aggregated_results = {} # asset_id -> {metrics_avg, feedback_summary}
+        
         for asset in assets:
-            a_id = asset.get("id")
-            if not a_id:
-                continue
-
-            image_url = asset.get("data") or asset.get("image_url_str")
-            image_url_str = asset.get("name")
-
-            grouped_map[a_id] = {
-                "image_id": a_id,
-                "image_url": image_url,
-                "image_url_str": image_url_str,
-                "cards": []
-            }
-
-        for r in results_flat:
-            asset_id = r.get("asset_id")
-            if not asset_id:
-                continue
-            if asset_id not in grouped_map:
-                grouped_map[asset_id] = {
-                    "image_id": asset_id,
-                    "image_url": r.get("image_url") or r.get("asset_url"),
-                    "image_url_str": r.get("image_url_str"),
-                    "cards": []
-                }
-
-            if "error" in r:
-                card = {
-                    "persona_id": r.get("persona_id"),
-                    "persona_name": r.get("persona_name"),
-                    "image_id": asset_id,
-                    "image_url": grouped_map[asset_id].get("url"),
-                    "error": r.get("error")
-                }
-                grouped_map[asset_id]["cards"].append(card)
-                continue
-
-            persona_payload = r.get("persona", {})
-            card = {
-                "persona_id": r.get("persona_id") or persona_payload.get("id"),
-                "persona_name": r.get("persona_name") or persona_payload.get("name"),
-                "role": persona_payload.get("role") or persona_payload.get("persona_type"),
-                "segment": persona_payload.get("segment"),
-                "key_characteristics": persona_payload.get("key_characteristics") or persona_payload.get("characteristics"),
-                "avatar_url": persona_payload.get("avatar_url"),
-                "clean_read": r.get("clean_read"),
-                "key_themes": r.get("key_themes"),
-                "strengths": r.get("strengths"),
-                "weaknesses": r.get("weaknesses"),
-                "scores": r.get("scores"),
-                "overall_preference_score": r.get("overall_preference_score"),
-                "card_number": r.get("card_number"),
-                "card_key": r.get("card_key"),
-                "persona_index": r.get("persona_index"),
-                "image_index": r.get("image_index"),
-                "image_id": asset_id,
-                "image_url": grouped_map[asset_id].get("url"),
-                "image_url_str":grouped_map[asset_id].get("name"),
-                "summary": r.get("summary")
-            }
-            grouped_map[asset_id]["cards"].append(card)
-
-        grouped_results = list(grouped_map.values())
-
-        aggregated_results = {}
-        for asset in assets:
-            a_id = asset.get("id")
-            if not a_id:
-                continue
-
-            asset_responses = [r for r in results_flat if r.get("asset_id") == a_id and "error" not in r]
+            a_id = asset['id']
+            asset_responses = [r for r in results if r.get('asset_id') == a_id and 'error' not in r]
+            
             if not asset_responses:
                 continue
-
+                
+            # Calc averages
             count = len(asset_responses)
             avg_scores = {
                 "motivation_to_prescribe": 0.0,
@@ -531,38 +487,36 @@ def run_synthetic_testingV2(
                 "stopping_power": 0.0
             }
             avg_pref = 0.0
-
+            
             for r in asset_responses:
-                s = r.get("scores", {})
-                if not s:
-                    continue
+                s = r.get('scores', {})
+                if not s: continue # Skip if scores missing
                 for k in avg_scores:
                     avg_scores[k] += s.get(k, 0)
-                avg_pref += r.get("overall_preference_score", 0)
-
+                avg_pref += r.get('overall_preference_score', 0)
+                
             for k in avg_scores:
                 avg_scores[k] = round(avg_scores[k] / count, 1) if count > 0 else 0
-
+            
             aggregated_results[a_id] = {
-                "asset_name": asset.get("name"),
+                "asset_name": asset['name'],
                 "average_scores": avg_scores,
                 "average_preference": int(avg_pref / count) if count > 0 else 0,
                 "respondent_count": count
             }
 
         return {
-            "results": grouped_results,
+            "results": results,
             "aggregated": aggregated_results,
             "metadata": {
-                "campaign_id": campaign_id,
-                "task_id": task_id,
+                "campaign_id":campaign_id,
+                "task_id":task_id,
                 "personas_count": len(personas),
                 "assets_count": len(assets),
                 "timestamp": datetime.now().isoformat()
             }
         }
-
     except Exception as e:
         import traceback
         logger.error(f"Global synthetic testing error: {e}\n{traceback.format_exc()}")
-        raise
+        raise e
