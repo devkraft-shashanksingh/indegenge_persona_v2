@@ -387,5 +387,98 @@ class PanelFeedbackRequest(BaseModel):
 
 class PanelFeedbackResponse(BaseModel):
     persona_cards: List[Dict[str, Any]]
+    summary_by_card: List[Dict[str, Any]]
     summary: Dict[str, Any]
     metadata: Dict[str, Any]
+
+
+class PanelFeedbackResponseV2(BaseModel):
+    images: List[Dict[str, Any]]
+    metadata: Dict[str, Any]
+
+
+class PanelFeedbackRequestV2(BaseModel):
+    campaign_id:str
+    task_id:str
+    persona_ids: List[int]
+    stimulus_text: str
+    stimulus_images: Optional[List[Dict[str, Any]]] = None
+    content_type: str = "text"
+
+
+class SyntheticAssetV2(BaseModel):
+    id: str  # Frontend generated UUID
+    name: str
+    text_content: Optional[str] = ""
+    url:str
+    image_url_str:str
+
+class SyntheticTestingRequestV2(BaseModel):
+    campaign_id:str
+    task_id:str
+    persona_ids: List[int]
+    assets: List[SyntheticAssetV2]
+
+
+class SyntheticCardV2(BaseModel):
+    persona_id: Optional[int] = None
+    persona_name: Optional[str] = None
+    role: Optional[str] = None
+    segment: Optional[str] = None
+    key_characteristics: Optional[List[str]] = None
+    avatar_url: Optional[str] = None
+
+    clean_read: Optional[str] = None
+    key_themes: Optional[List[str]] = None
+    strengths: Optional[List[str]] = None
+    weaknesses: Optional[List[str]] = None
+
+    scores: Optional[Dict[str, float]] = None
+    overall_preference_score: Optional[float] = None
+
+    card_number: Optional[int] = None
+    card_key: Optional[str] = None
+    persona_index: Optional[int] = None
+    image_index: Optional[int] = None
+
+    image_id: Optional[str] = None
+    image_url: Optional[str] = None
+    summary: Optional[Dict[str, Any]] = None
+
+    error: Optional[str] = None
+
+
+class SyntheticImageResultV2(BaseModel):
+    image_id: str
+    image_url: Optional[str] = None
+    image_url_str: Optional[str] = None
+    cards: List[SyntheticCardV2] = []
+
+
+class SyntheticAggregatedMetricsV2(BaseModel):
+    motivation_to_prescribe: float = 0.0
+    connection_to_story: float = 0.0
+    differentiation: float = 0.0
+    believability: float = 0.0
+    stopping_power: float = 0.0
+
+
+class SyntheticAggregatedItemV2(BaseModel):
+    asset_name: Optional[str] = None
+    average_scores: SyntheticAggregatedMetricsV2 = SyntheticAggregatedMetricsV2()
+    average_preference: int = 0
+    respondent_count: int = 0
+
+
+class SyntheticTestingMetadataV2(BaseModel):
+    campaign_id: str
+    task_id: str
+    personas_count: int
+    assets_count: int
+    timestamp: str
+
+
+class SyntheticTestingResponseV2(BaseModel):
+    results: List[SyntheticImageResultV2]
+    aggregated: Dict[str, SyntheticAggregatedItemV2]
+    metadata: SyntheticTestingMetadataV2
