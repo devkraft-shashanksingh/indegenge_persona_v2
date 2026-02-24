@@ -387,7 +387,7 @@ class PanelFeedbackRequest(BaseModel):
 
 class PanelFeedbackResponse(BaseModel):
     persona_cards: List[Dict[str, Any]]
-    summary_by_card: List[Dict[str, Any]]
+    summary_by_card: Optional[List[Dict[str, Any]]] = None
     summary: Dict[str, Any]
     metadata: Dict[str, Any]
 
