@@ -412,8 +412,8 @@ class SyntheticAssetV2(BaseModel):
     text_content: Optional[str] = ""
     url:str
     image_url_str:str
-    thumbnail_url:str
-    thumbnail_url_str:str
+    thumbnail_url: Optional[str] = None
+    thumbnail_url_str: Optional[str] = None
 
 class SyntheticTestingRequestV2(BaseModel):
     campaign_id:str
