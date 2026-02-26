@@ -247,6 +247,8 @@ def analyze_single_asset_persona_via_url(
         "asset_id": asset.get("id"),
         "image_id":asset.get("id"),
         "image_name":asset.get("name"),
+        "thumbnail_url":asset.get("thumbnail_url"),
+        "thumbnail_url_str":asset.get("thumbnail_url_str"),
         "image_url": asset.get("data"),
         "asset_url":asset.get("data"),
                 "error": f"Failed to fetch/encode image url: {str(e)}"
@@ -276,6 +278,8 @@ def analyze_single_asset_persona_via_url(
         "asset_id": asset.get("id"),
         "image_id":asset.get("id"),
         "image_name":asset.get("name"),
+        "thumbnail_url":asset.get("thumbnail_url"),
+        "thumbnail_url_str":asset.get("thumbnail_url_str"),
         "image_url": asset.get("data"),
         "asset_url":asset.get("data"),
             "error": result["error"]
@@ -297,6 +301,8 @@ def analyze_single_asset_persona_via_url(
         "asset_id": asset.get("id"),
         "image_id":asset.get("id"),
         "image_name":asset.get("name"),
+        "thumbnail_url":asset.get("thumbnail_url"),
+        "thumbnail_url_str":asset.get("thumbnail_url_str"),
         "image_url": asset.get("data"),
         "asset_url":asset.get("data"),
         "scores": scores,
