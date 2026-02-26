@@ -15,6 +15,16 @@ and actionable recommendations.
 import os
 import json
 import logging
+import base64
+import concurrent.futures
+import json
+import mimetypes
+import uuid
+from datetime import datetime
+from typing import Any, Dict, List, Optional
+from urllib.parse import urlparse
+
+import requests
 import json
 import uuid
 import concurrent.futures
@@ -159,15 +169,19 @@ def create_panel_feedback_prompt(
     content_description = ""
     if content_type == 'text':
         content_description = f"Marketing Message:\n\"{stimulus_text}\""
-    elif content_type == 'image':
+    elif content_type == 'image' or content_type=="":
         image_count = len(stimulus_images) if stimulus_images else 0
-        content_description = f"Visual Content: {image_count} image(s) provided for analysis"
+        content_description = f"Visual Content Read from the url: {stimulus_images[0]['description']}  image(s) provided for analysis"
     elif content_type == 'both':
         image_count = len(stimulus_images) if stimulus_images else 0
         content_description = f"Marketing Message:\n\"{stimulus_text}\"\n\nVisual Content: {image_count} image(s) provided for analysis"
     
+    print("This is content description")
+    print(content_description)
+    print("This is synthetic image url")
+    print({stimulus_images[0]['description']})
     prompt = f"""
-You are a pharmaceutical marketing analyst simulating how a specific persona would evaluate a marketing asset.
+You are a pharmaceutical marketing analyst simulating how a specific persona would evaluate a  marketing asset.
 
 **PERSONA PROFILE:**
 - Name: {persona_name}
@@ -274,7 +288,7 @@ def analyze_single_persona_panel(
             data_url = f"data:{image_info['content_type']};base64,{image_info['data']}"
             messages[0]["content"].append({
                 "type": "image_url",
-                "image_url": {"url": data_url}
+                "image_url": {"url": stimulus_images[0]['url']}
             })
     
     try:
@@ -410,6 +424,13 @@ Be specific and reference persona names when highlighting dissent. Focus on acti
         }
 
 
+
+
+
+
+
+
+
 def run_panel_feedback_analysis(
     persona_ids: List[int],
     stimulus_text: str,
@@ -507,6 +528,70 @@ def run_panel_feedback_analysis(
 
 
 
+
+
+def _url_to_base64_data_url(image_url: str, timeout: int = 30) -> str:
+    resp = requests.get(image_url, timeout=timeout)
+    resp.raise_for_status()
+
+    content_type = (resp.headers.get("Content-Type") or "").split(";")[0].strip()
+    if not content_type:
+        path = urlparse(image_url).path
+        guessed, _ = mimetypes.guess_type(path)
+        content_type = guessed or "image/jpeg"
+
+    b64 = base64.b64encode(resp.content).decode("utf-8")
+    return f"data:{content_type};base64,{b64}"
+
+
+def _extract_text_from_chat_json(resp: Any) -> str:
+    if resp is None:
+        return ""
+
+    if isinstance(resp, str):
+        return resp.strip()
+
+    if isinstance(resp, dict):
+        if "choices" in resp and isinstance(resp["choices"], list) and resp["choices"]:
+            msg = resp["choices"][0].get("message", {})
+            return (msg.get("content") or "").strip()
+
+        if "text" in resp and isinstance(resp["text"], str):
+            return resp["text"].strip()
+
+        if "output_text" in resp and isinstance(resp["output_text"], str):
+            return resp["output_text"].strip()
+
+    return str(resp).strip()
+
+
+def generate_single_image_description_via_llm(
+    image_url: str,
+    context_text: str = "",
+) -> str:
+    data_url = _url_to_base64_data_url(image_url)
+
+    prompt = (
+        "You are an expert visual analyst.\n"
+        "Describe the image clearly for downstream marketing/persona evaluation.\n"
+        "Return ONLY plain text (no markdown, no JSON).\n"
+        "Include: key objects/people, setting, action, visible text, medical/brand cues (if any), tone/style.\n"
+    )
+    if context_text:
+        prompt += f"\nContext:\n{context_text}\n"
+
+    messages = [{
+        "role": "user",
+        "content": [
+            {"type": "text", "text": prompt},
+            {"type": "image_url", "image_url": {"url": data_url}},
+        ],
+    }]
+
+    resp = _chat_json_panel(messages)
+    return _extract_text_from_chat_json(resp)
+
+
 def run_panel_feedback_analysis_v2(
     campaign_id: str,
     task_id: str,
@@ -517,27 +602,9 @@ def run_panel_feedback_analysis_v2(
     db=None
 ) -> Dict[str, Any]:
     """
-    Panel feedback v2 (FORCED CARTESIAN MODE):
-
-    ✅ If stimulus_images is a non-empty list:
-       persona_cards = (number of personas) x (number of images)
-       Example: 3 personas, 2 images => 6 cards
-       Each card analyzes exactly ONE image and includes persona_id + image_id/url.
-
-    ✅ If no images:
-       old behavior: 1 card per persona
-
-    FIXES:
-    ✅ Per-card summaries (NxM) generated concurrently (max_workers=5)
-    ✅ Output grouped by IMAGE:
-       images: [
-         { image_id, image_url, image_url_str, cards: [ {card + summary}, ... ], image_summary: {...} },
-         ...
-       ]
-    ✅ Each card includes its own summary inline (no separate summary_by_card needed for UI)
-    ✅ JSON-safe response to avoid FastAPI 500 / anyio.EndOfStream
-    ✅ card_key is UUID (generated uuid4) but returned as string in JSON (required)
-    ✅ NEW: For each image, also generate image_summary aggregated across ALL personas for that image
+    Same as your version, but:
+    ✅ NEW: Generate descriptions for ALL images FIRST (concurrent), WAIT until done.
+    ✅ If any fails -> set description="" (empty string), and still proceed to next step.
     """
 
     def _json_safe(x):
@@ -556,18 +623,13 @@ def run_panel_feedback_analysis_v2(
         return str(x)
 
     def synthesize_image_summary(cards_for_one_image: List[Dict[str, Any]], stimulus_text_in: str) -> Dict[str, Any]:
-        """
-        Aggregate summary for ONE image across ALL personas.
-        Re-uses synthesize_panel_summary but passes all cards of that image.
-        Your synthesize_panel_summary prompt should aggregate if len(cards) > 1.
-        """
         return synthesize_panel_summary(cards_for_one_image, stimulus_text_in)
 
     if not persona_ids:
         raise ValueError("At least one persona ID is required")
 
     # -------------------------------
-    # Fetch personas from database
+    # Fetch personas
     # -------------------------------
     personas: List[Dict[str, Any]] = []
     for persona_id in persona_ids:
@@ -591,39 +653,78 @@ def run_panel_feedback_analysis_v2(
     logger.info(f"🎯 Running panel feedback for {len(personas)} personas")
 
     # -------------------------------
-    # Debug logs
-    # -------------------------------
-    logger.info(
-        f"[panel-feedback-v2] content_type={content_type} | "
-        f"stimulus_images_type={type(stimulus_images)} | "
-        f"stimulus_images_len={(len(stimulus_images) if isinstance(stimulus_images, list) else 'NA')} | "
-        f"stimulus_images_truthy={bool(stimulus_images)}"
-    )
-    if isinstance(stimulus_images, list) and stimulus_images:
-        first = stimulus_images[0]
-        logger.info(
-            f"[panel-feedback-v2] first_image_type={type(first)} | "
-            f"first_image_keys={list(first.keys()) if isinstance(first, dict) else 'NA'}"
-        )
-
-    # -------------------------------
     # Decide NxM purely on images presence
     # -------------------------------
     has_images = isinstance(stimulus_images, list) and len(stimulus_images) > 0
 
     # -------------------------------
-    # Build jobs (assign card_number + card_key BEFORE LLM call)
-    # Order matches final sort: image first, then persona
+    # NEW: Generate descriptions for ALL images FIRST, then proceed
     # -------------------------------
+    if has_images:
+        logger.info("🖼️ Generating LLM descriptions for ALL stimulus images (blocking)...")
+
+        short_context = (stimulus_text or "")[:800]
+        desc_cache: Dict[str, str] = {}
+
+        # Build one future per image, but dedupe by URL
+        url_to_indices: Dict[str, List[int]] = {}
+        for idx, img in enumerate(stimulus_images):
+            if isinstance(img, dict) and img.get("url"):
+                url_to_indices.setdefault(img["url"], []).append(idx)
+
+        max_desc_workers = min(5, len(url_to_indices)) if url_to_indices else 1
+
+        results_by_url: Dict[str, str] = {}
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_desc_workers) as ex:
+            fut_map = {}
+
+            for url in url_to_indices.keys():
+                # cache hit
+                if url in desc_cache:
+                    results_by_url[url] = desc_cache[url]
+                    continue
+
+                fut = ex.submit(generate_single_image_description_via_llm, url, short_context)
+                fut_map[fut] = url
+
+            # Wait for ALL desc futures to finish
+            for fut in concurrent.futures.as_completed(fut_map):
+                url = fut_map[fut]
+                try:
+                    desc = fut.result()
+                    if not desc:
+                        desc = ""
+                    results_by_url[url] = desc
+                    desc_cache[url] = desc
+                except Exception as e:
+                    logger.error(f"❌ Image description failed for url={url}: {e}")
+                    results_by_url[url] = ""
+                    desc_cache[url] = ""
+
+        # Apply descriptions back onto stimulus_images (every index)
+        for url, indices in url_to_indices.items():
+            desc = results_by_url.get(url, "")
+            for idx in indices:
+                stimulus_images[idx]["description"] = desc
+
+        # Also handle entries without url / not dict
+        for idx, img in enumerate(stimulus_images):
+            if not isinstance(img, dict) or not img.get("url"):
+                if isinstance(img, dict):
+                    img["description"] = ""
+        logger.info("✅ All image descriptions done. Proceeding to panel NxM...")
+
+
+
+    print("this is feedback image description")
+    print(stimulus_images)
+    # -------------------------------
+    # Build jobs
+    # ------------------------------- 
     jobs: List[tuple] = []
 
     if has_images:
-        total_cards = len(personas) * len(stimulus_images)
-        logger.info(
-            f"🧩 Running FORCED CARTESIAN panel: {len(personas)} personas x "
-            f"{len(stimulus_images)} images -> {total_cards} persona_cards"
-        )
-
         for img_idx, img in enumerate(stimulus_images):
             for persona_idx, persona_dict in enumerate(personas):
                 card_number = (img_idx * len(personas)) + persona_idx + 1
@@ -631,24 +732,24 @@ def run_panel_feedback_analysis_v2(
                 image_id = img.get("id") if isinstance(img, dict) else None
                 image_url = img.get("url") if isinstance(img, dict) else None
                 image_url_str = img.get("image_url_str") if isinstance(img, dict) else None
+                image_description = img.get("description", "") if isinstance(img, dict) else ""
 
                 image_id_safe = str(image_id) if isinstance(image_id, uuid.UUID) else image_id
-
                 card_key = uuid.uuid4()
 
                 jobs.append((
-                    persona_idx,       # persona_index
-                    img_idx,           # image_index
-                    persona_dict,      # persona_dict
-                    img,               # single_img
-                    card_number,       # card_number
-                    card_key,          # card_key (UUID)
-                    image_id_safe,     # image_id
-                    image_url,         # image_url
-                    image_url_str      # image_url_str
+                    persona_idx,
+                    img_idx,
+                    persona_dict,
+                    img,
+                    card_number,
+                    card_key,
+                    image_id_safe,
+                    image_url,
+                    image_url_str,
+                    image_description,
                 ))
     else:
-        logger.info("🧩 Running OLD panel (no images): 1 card per persona")
         for persona_idx, persona_dict in enumerate(personas):
             card_number = persona_idx + 1
             card_key = uuid.uuid4()
@@ -661,7 +762,8 @@ def run_panel_feedback_analysis_v2(
                 card_key,
                 None,
                 None,
-                None
+                None,
+                "",
             ))
 
     # -------------------------------
@@ -673,7 +775,19 @@ def run_panel_feedback_analysis_v2(
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {}
 
-        for persona_index, image_index, persona_dict, single_img, card_number, card_key, image_id, image_url, image_url_str in jobs:
+        for (
+            persona_index,
+            image_index,
+            persona_dict,
+            single_img,
+            card_number,
+            card_key,
+            image_id,
+            image_url,
+            image_url_str,
+            image_description,
+        ) in jobs:
+
             card_context = {
                 "card_number": card_number,
                 "card_key": str(card_key),
@@ -682,6 +796,7 @@ def run_panel_feedback_analysis_v2(
                 "image_id": image_id,
                 "image_url": image_url,
                 "image_url_str": image_url_str,
+                "image_description": image_description,
                 "image_index": image_index,
                 "persona_index": persona_index,
             }
@@ -721,6 +836,7 @@ def run_panel_feedback_analysis_v2(
                 "image_id": image_id,
                 "image_url": image_url,
                 "image_url_str": image_url_str,
+                "image_description": image_description,
             }
 
         for future in concurrent.futures.as_completed(futures):
@@ -744,6 +860,7 @@ def run_panel_feedback_analysis_v2(
                         result["image_url"] = meta["image_url"]
                     if meta.get("image_url_str") is not None:
                         result["image_url_str"] = meta["image_url_str"]
+                    result["image_description"] = meta.get("image_description", "")
 
                 persona_cards.append(_json_safe(result))
 
@@ -770,6 +887,7 @@ def run_panel_feedback_analysis_v2(
                         err_obj["image_url"] = meta["image_url"]
                     if meta.get("image_url_str") is not None:
                         err_obj["image_url_str"] = meta["image_url_str"]
+                    err_obj["image_description"] = meta.get("image_description", "")
 
                 persona_cards.append(_json_safe(err_obj))
 
@@ -807,35 +925,33 @@ def run_panel_feedback_analysis_v2(
         c["summary"] = summary_lookup.get(ck)
 
     # -------------------------------
-    # GROUP RESPONSE BY IMAGE
-    # + NEW: image_summary aggregated across personas for each image
+    # GROUP RESPONSE BY IMAGE + PER-IMAGE SUMMARY
     # -------------------------------
     images_grouped: Dict[str, Dict[str, Any]] = {}
 
     if has_images:
         for card in persona_cards:
             img_id = card.get("image_id") or "no_image"
+
             if img_id not in images_grouped:
                 images_grouped[img_id] = {
                     "image_id": img_id,
                     "image_url": card.get("image_url"),
                     "image_url_str": card.get("image_url_str"),
+                    "description": card.get("image_description", ""),
                     "image_index": card.get("image_index", 0),
                     "cards": []
                 }
+
             images_grouped[img_id]["cards"].append(card)
 
         images_list = list(images_grouped.values())
         images_list.sort(key=lambda x: x.get("image_index", 0))
 
-        # sort cards by persona order
         for img_obj in images_list:
             img_obj["cards"].sort(key=lambda c: c.get("persona_index", 0))
             img_obj.pop("image_index", None)
 
-        # -------------------------------
-        # PER-IMAGE SUMMARY (aggregate across ALL personas for each image)
-        # -------------------------------
         logger.info("🧠 Synthesizing PER-IMAGE summaries (aggregate across personas)...")
 
         image_order = [img_obj["image_id"] for img_obj in images_list]
@@ -860,10 +976,7 @@ def run_panel_feedback_analysis_v2(
                 if img_id in images_grouped:
                     images_grouped[img_id]["image_summary"] = image_summary
 
-        # rebuild ordered list (stable)
         images_list = [images_grouped[iid] for iid in image_order]
-
-        # ensure each image has image_summary key even if failed to compute
         for img_obj in images_list:
             if "image_summary" not in img_obj:
                 img_obj["image_summary"] = None
@@ -873,6 +986,7 @@ def run_panel_feedback_analysis_v2(
             "image_id": None,
             "image_url": None,
             "image_url_str": None,
+            "description": "",
             "cards": persona_cards,
             "image_summary": None
         }]
@@ -892,18 +1006,10 @@ def run_panel_feedback_analysis_v2(
         }
     }
 
-
-    # FINAL safety: ensure JSON serializable
     result = _json_safe(result)
-    try:
-        json.dumps(result)
-    except Exception as e:
-        logger.exception(f"❌ Final response not JSON serializable: {e}")
-        raise
-
+    json.dumps(result)  # validate JSON serializable
     logger.info(f"✅ Panel feedback analysis complete for {len(persona_cards)} persona_cards")
     return result
-
 
 # def run_panel_feedback_analysis_v2(
 #     campaign_id:str,
