@@ -59,6 +59,7 @@ def list_task_ids(
             items.append({
                 "task_id": str(getattr(r, "task_id", "")),
                 "type_test": getattr(r, "type_test", None),
+                "task_name":getattr(r, "task_name", None),
                 "status": getattr(r, "status", None),
                 "created_at": getattr(r, "created_at", None) if hasattr(r, "created_at") else None,
             })
