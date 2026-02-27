@@ -50,7 +50,9 @@ def create_panel_feedback(
             stimulus_text=request.stimulus_text,
             stimulus_images=request.stimulus_images,
             content_type=request.content_type,
-            db=db
+            panel_feedback_prompt=request.panel_feedback_prompt,
+            panel_summary_prompt=request.panel_summary_prompt,
+            db=db,
         )
         return result
     except ValueError as e:

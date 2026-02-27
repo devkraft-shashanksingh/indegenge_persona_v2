@@ -392,10 +392,12 @@ class PanelFeedbackResponse(BaseModel):
     metadata: Dict[str, Any]
 
 
+
 class PanelFeedbackResponseV2(BaseModel):
     images: List[Dict[str, Any]]
     metadata: Dict[str, Any]
-
+    panel_feedback_prompt: str
+    panel_summary_prompt: str
 
 class PanelFeedbackRequestV2(BaseModel):
     campaign_id:str
@@ -404,6 +406,8 @@ class PanelFeedbackRequestV2(BaseModel):
     stimulus_text: str
     stimulus_images: Optional[List[Dict[str, Any]]] = None
     content_type: str = "text"
+    panel_feedback_prompt: Optional[str] = None
+    panel_summary_prompt:Optional[str] = None
 
 
 class SyntheticAssetV2(BaseModel):
@@ -420,6 +424,7 @@ class SyntheticTestingRequestV2(BaseModel):
     task_id:str
     persona_ids: List[int]
     assets: List[SyntheticAssetV2]
+    synthetic_prompt: Optional[str] = ""
 
 
 
@@ -457,3 +462,4 @@ class SyntheticTestingResponseV2(BaseModel):
     results: List[SyntheticImageResultV2]
     aggregated: Dict[str, SyntheticAggregatedItemV2]
     metadata: SyntheticTestingMetadataV2
+    synthetic_prompt:str

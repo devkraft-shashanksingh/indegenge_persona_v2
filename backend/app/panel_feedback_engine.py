@@ -86,10 +86,104 @@ from datetime import datetime
 # -------------------------------
 # HELPERS
 # -------------------------------
+# -------------------------------
+# PROMPT: SINGLE CARD (persona + image)
+
+
+# ✅ Put these constants somewhere near the top of the module (or inside the function if you prefer)
+
+
+DEFAULT_PANEL_FEEDBACK_PROMPT = (
+    "You are a pharmaceutical marketing analyst simulating how a specific persona would evaluate a marketing asset.\n\n"
+
+    "PERSONA PROFILE:\n"
+    "- Name: <Persona Name>\n"
+    "- Type: <Persona Type>\n"
+    "- Role/Condition: <Role or Condition>\n"
+    "- Key Characteristics: <Key Characteristics>\n\n"
+
+    "DETAILED PERSONA DATA:\n"
+    "<Persona Details Will Be Provided Automatically>\n\n"
+
+    "MARKETING ASSET TO ANALYZE:\n"
+    "<Marketing Content Will Be Provided Automatically>\n\n"
+
+    "CRITICAL RULES (follow strictly):\n"
+    "1) If an image is provided, your response MUST reference at least 6 concrete visual details across the entire output.\n"
+    "2) Do NOT invent details. If unsure, say \"appears\" or \"seems\".\n"
+    "3) Avoid generic pharma marketing feedback. Every theme, strength, or weakness MUST be tied to something visible or explicitly stated.\n"
+    "4) Persona grounding:\n"
+    "   - Patients: clarity, reassurance, safety, and next-step understanding.\n"
+    "   - HCPs: evidence, indication clarity, dosing, safety, comparators, and clinical relevance.\n\n"
+
+    "YOUR TASK:\n"
+    "Analyze this asset from the perspective of the assigned persona and provide:\n\n"
+
+    "1. Clean Read (1–3 sentences; include concrete details if image present)\n"
+    "2. Key Themes (2–4; tied to observable cues)\n"
+    "3. Strengths (2–4; explain WHY they work)\n"
+    "4. Weaknesses (2–4; explain what causes confusion or friction)\n"
+    "5. Actionable Recommendations (specific edits driven by persona needs)\n\n"
+
+    "OUTPUT FORMAT (JSON ONLY):\n"
+    "```json\n"
+    "{\n"
+    "  \"persona_header\": {\n"
+    "    \"name\": \"\",\n"
+    "    \"role\": \"\",\n"
+    "    \"segment\": \"\",\n"
+    "    \"key_characteristics\": []\n"
+    "  },\n"
+    "  \"clean_read\": \"\",\n"
+    "  \"key_themes\": [],\n"
+    "  \"strengths\": [],\n"
+    "  \"weaknesses\": [],\n"
+    "  \"recommendations\": [\n"
+    "    {\n"
+    "      \"suggestion\": \"\",\n"
+    "      \"reasoning\": \"\"\n"
+    "    }\n"
+    "  ]\n"
+    "}\n"
+    "```\n\n"
+
+    "Return ONLY valid JSON. Do not include explanations or commentary."
+)
+
+
+DEFAULT_PANEL_SUMMARY_PROMPT = (
+    "You are an expert pharmaceutical marketing analyst.\n\n"
+
+    "You have collected panel feedback from {{unique_persona_count}} unique personas analyzing a marketing asset.\n\n"
+
+    "STIMULUS TEXT:\n"
+    "\"{{stimulus_text}}\"\n\n"
+
+    "INDIVIDUAL PERSONA FEEDBACK:\n"
+    "{{persona_feedback}}\n\n"
+
+    "YOUR TASK:\n"
+    "1) Identify Aggregated Themes including counts like \"3 of {{unique_persona_count}} personas...\"\n"
+    "2) Highlight Dissenting Opinions and explain WHY they differ\n"
+    "3) Provide Actionable Recommendations driven by personas\n\n"
+
+    "Return STRICT JSON ONLY in the following format:\n"
+    "```json\n"
+    "{\n"
+    "  \"aggregated_themes\": [\"<theme>\"],\n"
+    "  \"dissent_highlights\": [\"<disagreement>\"],\n"
+    "  \"recommendations\": [\n"
+    "    {\"suggestion\": \"<change>\", \"reasoning\": \"<persona justification>\"}\n"
+    "  ]\n"
+    "}\n"
+    "```"
+)
+
+# -------------------------------
 def _image_key(img: Any, img_idx: int) -> str:
     """
     Stable grouping key even when image_id is None.
-    Preference: id -> url -> image_url_str -> idx
+    Preference: id -> url -> image_url_str -> thumb -> idx
     """
     if not isinstance(img, dict):
         return f"idx_{img_idx}"
@@ -150,7 +244,7 @@ def _chat_json_panel(messages: List[Dict[str, Any]], max_completion_tokens: Opti
     if max_completion_tokens is None:
         max_completion_tokens = 2048
 
-    # Inject enforcement instruction (once)
+    # Inject enforcement instruction (once) into LAST user message
     enforce = "\n\nReturn ONLY valid JSON. No commentary, no code fences."
     if messages and messages[-1].get("role") == "user":
         for part in messages[-1].get("content", []):
@@ -302,7 +396,7 @@ Analyze this asset from the perspective of this persona. Provide:
   "clean_read": "<1-3 sentences describing initial interpretation>",
   "key_themes": ["<theme 1>", "<theme 2>", "<theme 3>"],
   "strengths": ["<strength 1>", "<strength 2>"],
-  "weaknesses": ["<weakness 1>", "<weakness 2>"]
+  "weaknesses": ["<weakness 1>", "<weakness 2>"],
   "recommendations": [
     {{"suggestion": "<actionable change>", "reasoning": "<who/why>"}},
     {{"suggestion": "<actionable change>", "reasoning": "<who/why>"}}
@@ -319,7 +413,8 @@ def analyze_single_persona_panel(
     persona_dict: Dict[str, Any],
     stimulus_text: str,
     stimulus_images: Optional[List[Dict]] = None,
-    content_type: str = "text"
+    content_type: str = "text",
+    panel_feedback_prompt: str = "",  # ✅ frontend override (optional)
 ) -> Dict[str, Any]:
     """
     Analyze a single persona's panel feedback response.
@@ -347,18 +442,41 @@ def analyze_single_persona_panel(
         'full_persona': full_persona
     }
 
-    prompt = create_panel_feedback_prompt(
-        persona_data,
-        stimulus_text,
-        stimulus_images,
-        content_type
-    )
+    # ✅ Choose instructions prompt (NO replace/templating)
+    if isinstance(panel_feedback_prompt, str) and panel_feedback_prompt.strip():
+        prompt_text = panel_feedback_prompt
+    else:
+        prompt_text = create_panel_feedback_prompt(
+            persona_data,
+            stimulus_text,
+            stimulus_images,
+            content_type
+        )
 
-    messages = [{"role": "user", "content": [{"type": "text", "text": prompt}]}]
+    # ✅ Always include locked runtime context so user cannot delete persona/content by editing prompt
+    locked_context = f"""
+--- LOCKED_CONTEXT (DO NOT IGNORE) ---
+persona_id: {persona_id}
+persona_name: {persona_name}
+persona_type: {persona_data.get('persona_type')}
+persona_condition_or_role: {persona_data.get('condition')}
 
-    # ✅ Attach images for this card
+full_persona_json:
+{json.dumps(full_persona, indent=2)[:3000]}
+
+stimulus_text:
+{stimulus_text[:2000]}
+--- END_LOCKED_CONTEXT ---
+"""
+    
+    messages = [
+        {"role": "user", "content": [{"type": "text", "text": prompt_text}]},
+        {"role": "user", "content": [{"type": "text", "text": locked_context}]},
+    ]
+
+    # ✅ Attach images for this card (to the LAST user message so model sees them near context)
     if stimulus_images and content_type in ["image", "both"]:
-        _attach_images_to_message_parts(messages[0]["content"], stimulus_images)
+        _attach_images_to_message_parts(messages[-1]["content"], stimulus_images)
 
     try:
         data = _chat_json_panel(messages)
@@ -379,7 +497,7 @@ def analyze_single_persona_panel(
             "key_themes": data.get("key_themes", []),
             "strengths": data.get("strengths", []),
             "weaknesses": data.get("weaknesses", []),
-            "recommendations":data.get("recommendations",[])
+            "recommendations": data.get("recommendations", [])
         }
 
         logger.info(f"✅ Panel feedback completed for {persona_name}")
@@ -398,7 +516,7 @@ def analyze_single_persona_panel(
             "key_themes": [],
             "strengths": [],
             "weaknesses": [],
-            "recommendations":[],
+            "recommendations": [],
             "error": str(e)
         }
 
@@ -410,7 +528,8 @@ def synthesize_panel_summary(
     persona_cards: List[Dict[str, Any]],
     stimulus_text: str,
     stimulus_images: Optional[List[Dict[str, Any]]] = None,
-    force_image_grounding: bool = True
+    force_image_grounding: bool = True,
+    panel_summary_prompt: str = "",  # ✅ frontend override (optional)
 ) -> Dict[str, Any]:
     """
     Synthesize a summary from persona panel feedback.
@@ -435,7 +554,7 @@ def synthesize_panel_summary(
             "key_themes": card.get("key_themes", []),
             "strengths": card.get("strengths", []),
             "weaknesses": card.get("weaknesses", []),
-            "recommendations":card.get("recommendations",[])
+            "recommendations": card.get("recommendations", [])
         })
 
     image_count = len(stimulus_images) if stimulus_images else 0
@@ -452,7 +571,7 @@ def synthesize_panel_summary(
 - Do NOT invent details you cannot see.
 """
 
-    prompt = f"""
+    default_prompt = f"""
 You are an expert pharmaceutical marketing analyst.
 
 You have collected panel feedback from {unique_persona_count} unique personas analyzing a marketing asset.
@@ -483,11 +602,35 @@ Synthesize the feedback into a cohesive summary:
 }}
 """
 
-    messages = [{"role": "user", "content": [{"type": "text", "text": prompt}]}]
+    # ✅ Choose instructions prompt (NO replace/templating)
+    prompt_text = panel_summary_prompt if (isinstance(panel_summary_prompt, str) and panel_summary_prompt.strip()) else default_prompt
 
-    # ✅ Attach images to the SUMMARY call too
+    # ✅ Always include locked runtime context so user cannot delete the data by editing prompt
+    locked_context = f"""
+--- LOCKED_CONTEXT (DO NOT IGNORE) ---
+unique_persona_count: {unique_persona_count}
+
+stimulus_text:
+{stimulus_text[:1200]}
+
+grounding_rules:
+{grounding_rules}
+
+cards_summary_json:
+{json.dumps(cards_summary, indent=2)}
+--- END_LOCKED_CONTEXT ---
+"""
+    
+
+
+    messages = [
+        {"role": "user", "content": [{"type": "text", "text": prompt_text}]},
+        {"role": "user", "content": [{"type": "text", "text": locked_context}]},
+    ]
+
+    # ✅ Attach images to the SUMMARY call too (attach to locked context message)
     if stimulus_images:
-        _attach_images_to_message_parts(messages[0]["content"], stimulus_images)
+        _attach_images_to_message_parts(messages[-1]["content"], stimulus_images)
 
     try:
         data = _chat_json_panel(messages, max_completion_tokens=1500)
@@ -509,9 +652,10 @@ Synthesize the feedback into a cohesive summary:
         }
 
 
-# -------------------------------
-# MAIN RUN
-# -------------------------------
+
+
+
+
 def run_panel_feedback_analysis_v2(
     campaign_id: str,
     task_id: str,
@@ -519,11 +663,27 @@ def run_panel_feedback_analysis_v2(
     stimulus_text: str,
     stimulus_images: Optional[List[Dict]] = None,
     content_type: str = "text",
+    panel_feedback_prompt: str = "",   # ✅ frontend override (optional)
+    panel_summary_prompt: str = "",    # ✅ frontend override (optional)
     db=None,
-    # ✅ SPEED CONTROL:
-    generate_card_summaries: bool = False,  # ✅ default OFF (no extra LLM call)
-    generate_image_summaries: bool = True,  # keep ON (usually what UI needs)
+    generate_card_summaries: bool = True,
+    generate_image_summaries: bool = True,
 ) -> Dict[str, Any]:
+
+    # ✅ resolve effective prompts:
+    # - if frontend sent non-empty -> use it
+    # - else fallback to defaults
+    effective_panel_feedback_prompt = (
+        panel_feedback_prompt.strip()
+        if isinstance(panel_feedback_prompt, str) and panel_feedback_prompt.strip()
+        else DEFAULT_PANEL_FEEDBACK_PROMPT
+    )
+
+    effective_panel_summary_prompt = (
+        panel_summary_prompt.strip()
+        if isinstance(panel_summary_prompt, str) and panel_summary_prompt.strip()
+        else DEFAULT_PANEL_SUMMARY_PROMPT
+    )
 
     def _json_safe(x):
         if x is None:
@@ -604,7 +764,7 @@ def run_panel_feedback_analysis_v2(
                     image_url_str,
                     thumbnail_url,
                     thumbnail_url_str,
-                    ikey,  # ✅ crucial
+                    ikey,
                 ))
     else:
         for persona_idx, persona_dict in enumerate(personas):
@@ -615,9 +775,8 @@ def run_panel_feedback_analysis_v2(
                 None,
                 persona_idx + 1,
                 uuid.uuid4(),
-                None,
-                None,
-                None,
+                None, None, None,
+                None, None,
                 None,
             ))
 
@@ -653,11 +812,11 @@ def run_panel_feedback_analysis_v2(
                 "image_id": image_id,
                 "image_url": image_url,
                 "image_url_str": image_url_str,
-                "thumbnail_url":thumbnail_url,
-                "thumbnail_url_str":thumbnail_url_str,
+                "thumbnail_url": thumbnail_url,
+                "thumbnail_url_str": thumbnail_url_str,
                 "image_index": image_index,
                 "persona_index": persona_index,
-                "image_key": image_key,  # ✅ crucial
+                "image_key": image_key,
             }
 
             injected_text = (
@@ -671,8 +830,9 @@ def run_panel_feedback_analysis_v2(
                 analyze_single_persona_panel,
                 persona_dict,
                 injected_text,
-                [single_img] if has_images else None,  # single image per card
-                content_type
+                [single_img] if has_images else None,
+                content_type,
+                effective_panel_feedback_prompt,  # ✅ use effective
             )
 
             futures[future] = {**card_context}
@@ -687,20 +847,14 @@ def run_panel_feedback_analysis_v2(
                 logger.error(f"❌ Panel failed: {e}")
                 persona_cards.append({"error": str(e), **meta})
 
-    # ordering
     if has_images:
         persona_cards.sort(key=lambda x: (x.get("image_index", 0), x.get("persona_index", 0)))
 
     # -------------------------------
-    # PER CARD SUMMARY
-    # ✅ NO LLM CALL
-    # ✅ Use exact keys:
-    #    "aggregated_themes", "dissent_highlights", "recommendations"
+    # PER CARD SUMMARY (NO LLM CALL)
     # -------------------------------
     for c in persona_cards:
         recs = c.get("recommendations", [])
-
-        # if recommendations is ["...", "..."] convert to [{"suggestion":..., "reasoning":...}]
         if recs and isinstance(recs, list) and isinstance(recs[0], str):
             recs = [{"suggestion": r, "reasoning": ""} for r in recs]
 
@@ -711,7 +865,7 @@ def run_panel_feedback_analysis_v2(
         }
 
     # -------------------------------
-    # GROUP BY IMAGE (FIX: use image_key)
+    # GROUP BY IMAGE
     # -------------------------------
     images_grouped: Dict[str, Dict[str, Any]] = {}
 
@@ -724,8 +878,8 @@ def run_panel_feedback_analysis_v2(
                     "image_id": card.get("image_id"),
                     "image_url": card.get("image_url"),
                     "image_url_str": card.get("image_url_str"),
-                    "thumbnail_url":card.get("thumbnail_url"),
-                    "thumbnail_url_str":card.get("thumbnail_url_str"),
+                    "thumbnail_url": card.get("thumbnail_url"),
+                    "thumbnail_url_str": card.get("thumbnail_url_str"),
                     "cards": []
                 }
             images_grouped[ikey]["cards"].append(card)
@@ -733,7 +887,7 @@ def run_panel_feedback_analysis_v2(
         images_list = list(images_grouped.values())
 
         # -------------------------------
-        # IMAGE SUMMARY (per image bucket)
+        # IMAGE SUMMARY
         # -------------------------------
         if generate_image_summaries:
             with concurrent.futures.ThreadPoolExecutor(max_workers=min(5, max(1, len(images_list)))) as ex:
@@ -743,10 +897,17 @@ def run_panel_feedback_analysis_v2(
                         "id": img.get("image_id"),
                         "url": img.get("image_url"),
                         "image_url_str": img.get("image_url_str"),
-                        "thumbnail_url":img.get("thumbnail_url"),
-                        "thumbnail_url_str":img.get("thumbnail_url_str"),
+                        "thumbnail_url": img.get("thumbnail_url"),
+                        "thumbnail_url_str": img.get("thumbnail_url_str"),
                     }]
-                    futs[ex.submit(synthesize_panel_summary, img["cards"], stimulus_text, img_payload, True)] = img["image_key"]
+                    futs[ex.submit(
+                        synthesize_panel_summary,
+                        img["cards"],
+                        stimulus_text,
+                        img_payload,
+                        True,
+                        effective_panel_summary_prompt,  # ✅ use effective
+                    )] = img["image_key"]
 
                 for f in concurrent.futures.as_completed(futs):
                     ikey = futs[f]
@@ -773,6 +934,7 @@ def run_panel_feedback_analysis_v2(
             "image_summary": None
         }]
 
+    # ✅ Add these 2 fields in the final response (top-level)
     result = {
         "images": images_list,
         "metadata": {
@@ -785,13 +947,309 @@ def run_panel_feedback_analysis_v2(
             "created_at": datetime.now().isoformat(),
             "generate_card_summaries": bool(generate_card_summaries),
             "generate_image_summaries": bool(generate_image_summaries),
-        }
+        },
+        "panel_feedback_prompt": effective_panel_feedback_prompt,
+        "panel_summary_prompt": effective_panel_summary_prompt,
     }
 
     result = _json_safe(result)
     json.dumps(result)  # validate JSON-serializable
     logger.info("✅ Panel feedback complete")
     return result
+
+
+# -------------------------------
+# MAIN RUN
+# -------------------------------
+# def run_panel_feedback_analysis_v2(
+#     campaign_id: str,
+#     task_id: str,
+#     persona_ids: List[int],
+#     stimulus_text: str,
+#     stimulus_images: Optional[List[Dict]] = None,
+#     content_type: str = "text",
+#     panel_feedback_prompt: str = "",   # ✅ frontend override (optional)
+#     panel_summary_prompt: str = "",   # ✅ frontend override (optional)
+#     db=None,
+#     generate_card_summaries: bool = True,
+#     generate_image_summaries: bool = True,
+# ) -> Dict[str, Any]:
+
+#     def _json_safe(x):
+#         if x is None:
+#             return None
+#         if isinstance(x, (str, int, float, bool)):
+#             return x
+#         if isinstance(x, uuid.UUID):
+#             return str(x)
+#         if isinstance(x, datetime):
+#             return x.isoformat()
+#         if isinstance(x, dict):
+#             return {str(_json_safe(k)): _json_safe(v) for k, v in x.items()}
+#         if isinstance(x, (list, tuple, set)):
+#             return [_json_safe(v) for v in list(x)]
+#         return str(x)
+
+#     if not persona_ids:
+#         raise ValueError("At least one persona ID is required")
+
+#     # -------------------------------
+#     # Fetch Personas
+#     # -------------------------------
+#     personas = []
+#     for persona_id in persona_ids:
+#         persona = crud.get_persona(db, persona_id)
+#         if persona:
+#             personas.append({
+#                 "id": persona.id,
+#                 "name": persona.name,
+#                 "age": persona.age,
+#                 "gender": persona.gender,
+#                 "condition": persona.condition,
+#                 "location": persona.location,
+#                 "persona_type": persona.persona_type,
+#                 "avatar_url": getattr(persona, "avatar_url", None),
+#                 "full_persona_json": persona.full_persona_json,
+#             })
+
+#     if not personas:
+#         raise ValueError("No valid personas found")
+
+#     logger.info(f"🎯 Running panel feedback for {len(personas)} personas")
+
+#     has_images = isinstance(stimulus_images, list) and len(stimulus_images) > 0
+
+#     # ✅ Auto-fix content_type so images are actually sent
+#     if has_images and content_type not in ["image", "both"]:
+#         content_type = "both" if (stimulus_text and stimulus_text.strip()) else "image"
+
+#     # -------------------------------
+#     # BUILD JOBS (forced cartesian)
+#     # -------------------------------
+#     jobs = []
+
+#     if has_images:
+#         for img_idx, img in enumerate(stimulus_images):
+#             ikey = _image_key(img, img_idx)
+
+#             for persona_idx, persona_dict in enumerate(personas):
+#                 card_number = (img_idx * len(personas)) + persona_idx + 1
+#                 card_key = uuid.uuid4()
+
+#                 image_id = img.get("id") if isinstance(img, dict) else None
+#                 image_url = img.get("url") if isinstance(img, dict) else None
+#                 image_url_str = img.get("image_url_str") if isinstance(img, dict) else None
+#                 thumbnail_url = img.get("thumbnail_url") if isinstance(img, dict) else None
+#                 thumbnail_url_str = img.get("thumbnail_url_str") if isinstance(img, dict) else None
+
+#                 jobs.append((
+#                     persona_idx,
+#                     img_idx,
+#                     persona_dict,
+#                     img,
+#                     card_number,
+#                     card_key,
+#                     image_id,
+#                     image_url,
+#                     image_url_str,
+#                     thumbnail_url,
+#                     thumbnail_url_str,
+#                     ikey,  # ✅ crucial
+#                 ))
+#     else:
+#         # ✅ keep tuple shape consistent with unpack below
+#         for persona_idx, persona_dict in enumerate(personas):
+#             jobs.append((
+#                 persona_idx,          # persona_index
+#                 None,                # image_index
+#                 persona_dict,         # persona_dict
+#                 None,                # single_img
+#                 persona_idx + 1,      # card_number
+#                 uuid.uuid4(),         # card_key
+#                 None, None, None,     # image_id, image_url, image_url_str
+#                 None, None,           # thumbnail_url, thumbnail_url_str
+#                 None,                # image_key
+#             ))
+
+#     # -------------------------------
+#     # EXECUTE PANEL CALLS
+#     # -------------------------------
+#     persona_cards = []
+#     max_workers = min(5, len(jobs)) if jobs else 1
+
+#     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+#         futures = {}
+
+#         for (
+#             persona_index,
+#             image_index,
+#             persona_dict,
+#             single_img,
+#             card_number,
+#             card_key,
+#             image_id,
+#             image_url,
+#             image_url_str,
+#             thumbnail_url,
+#             thumbnail_url_str,
+#             image_key,
+#         ) in jobs:
+
+#             card_context = {
+#                 "card_number": card_number,
+#                 "card_key": str(card_key),
+#                 "persona_id": persona_dict["id"],
+#                 "persona_name": persona_dict.get("name"),
+#                 "image_id": image_id,
+#                 "image_url": image_url,
+#                 "image_url_str": image_url_str,
+#                 "thumbnail_url": thumbnail_url,
+#                 "thumbnail_url_str": thumbnail_url_str,
+#                 "image_index": image_index,
+#                 "persona_index": persona_index,
+#                 "image_key": image_key,
+#             }
+
+#             injected_text = (
+#                 "### CARD_CONTEXT\n"
+#                 f"{json.dumps(_json_safe(card_context))}\n"
+#                 "### END_CARD_CONTEXT\n\n"
+#                 f"{stimulus_text}"
+#             )
+
+#             future = executor.submit(
+#                 analyze_single_persona_panel,
+#                 persona_dict,
+#                 injected_text,
+#                 [single_img] if has_images else None,  # single image per card
+#                 content_type,
+#                 panel_feedback_prompt,                 # ✅ pass frontend override
+#             )
+
+#             futures[future] = {**card_context}
+
+#         for future in concurrent.futures.as_completed(futures):
+#             meta = futures[future]
+#             try:
+#                 result = future.result()
+#                 result.update(meta)
+#                 persona_cards.append(_json_safe(result))
+#             except Exception as e:
+#                 logger.error(f"❌ Panel failed: {e}")
+#                 persona_cards.append({"error": str(e), **meta})
+
+#     # ordering
+#     if has_images:
+#         persona_cards.sort(key=lambda x: (x.get("image_index", 0), x.get("persona_index", 0)))
+
+#     # -------------------------------
+#     # PER CARD SUMMARY
+#     # ✅ NO LLM CALL
+#     # ✅ Use exact keys:
+#     #    "aggregated_themes", "dissent_highlights", "recommendations"
+#     # -------------------------------
+#     for c in persona_cards:
+#         recs = c.get("recommendations", [])
+
+#         # if recommendations is ["...", "..."] convert to [{"suggestion":..., "reasoning":...}]
+#         if recs and isinstance(recs, list) and isinstance(recs[0], str):
+#             recs = [{"suggestion": r, "reasoning": ""} for r in recs]
+
+#         c["summary"] = {
+#             "aggregated_themes": [],
+#             "dissent_highlights": [],
+#             "recommendations": recs or [],
+#         }
+
+#     # -------------------------------
+#     # GROUP BY IMAGE (FIX: use image_key)
+#     # -------------------------------
+#     images_grouped: Dict[str, Dict[str, Any]] = {}
+
+#     if has_images:
+#         for card in persona_cards:
+#             ikey = card.get("image_key") or "unknown_image"
+#             if ikey not in images_grouped:
+#                 images_grouped[ikey] = {
+#                     "image_key": ikey,
+#                     "image_id": card.get("image_id"),
+#                     "image_url": card.get("image_url"),
+#                     "image_url_str": card.get("image_url_str"),
+#                     "thumbnail_url": card.get("thumbnail_url"),
+#                     "thumbnail_url_str": card.get("thumbnail_url_str"),
+#                     "cards": []
+#                 }
+#             images_grouped[ikey]["cards"].append(card)
+
+#         images_list = list(images_grouped.values())
+
+#         # -------------------------------
+#         # IMAGE SUMMARY (per image bucket)
+#         # -------------------------------
+#         if generate_image_summaries:
+#             with concurrent.futures.ThreadPoolExecutor(max_workers=min(5, max(1, len(images_list)))) as ex:
+#                 futs = {}
+#                 for img in images_list:
+#                     img_payload = [{
+#                         "id": img.get("image_id"),
+#                         "url": img.get("image_url"),
+#                         "image_url_str": img.get("image_url_str"),
+#                         "thumbnail_url": img.get("thumbnail_url"),
+#                         "thumbnail_url_str": img.get("thumbnail_url_str"),
+#                     }]
+#                     futs[ex.submit(
+#                         synthesize_panel_summary,
+#                         img["cards"],
+#                         stimulus_text,
+#                         img_payload,
+#                         True,
+#                         panel_summary_prompt,  # ✅ pass frontend override
+#                     )] = img["image_key"]
+
+#                 for f in concurrent.futures.as_completed(futs):
+#                     ikey = futs[f]
+#                     try:
+#                         images_grouped[ikey]["image_summary"] = _json_safe(f.result())
+#                     except Exception as e:
+#                         images_grouped[ikey]["image_summary"] = {"image_summary_error": str(e)}
+
+#             images_list = list(images_grouped.values())
+#         else:
+#             for k in images_grouped:
+#                 images_grouped[k]["image_summary"] = None
+#             images_list = list(images_grouped.values())
+
+#     else:
+#         images_list = [{
+#             "image_key": None,
+#             "image_id": None,
+#             "image_url": None,
+#             "image_url_str": None,
+#             "thumbnail_url": None,
+#             "thumbnail_url_str": None,
+#             "cards": persona_cards,
+#             "image_summary": None
+#         }]
+
+#     result = {
+#         "images": images_list,
+#         "metadata": {
+#             "persona_count": len(personas),
+#             "cards_count": len(persona_cards),
+#             "campaign_id": campaign_id,
+#             "task_id": task_id,
+#             "image_count": len(stimulus_images) if has_images else 0,
+#             "mapping_mode": "forced_cartesian" if has_images else "per_persona",
+#             "created_at": datetime.now().isoformat(),
+#             "generate_card_summaries": bool(generate_card_summaries),
+#             "generate_image_summaries": bool(generate_image_summaries),
+#         }
+#     }
+
+#     result = _json_safe(result)
+#     json.dumps(result)  # validate JSON-serializable
+#     logger.info("✅ Panel feedback complete")
+#     return result
 
  
 # def run_panel_feedback_analysis_v2(
