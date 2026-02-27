@@ -261,6 +261,8 @@ class TaskHistory(Base):
 
     type_test = Column(Text)
     status = Column(Text)
+    task_name = Column(Text)
+
 
     created_at = Column(
         DateTime(timezone=True),   # ✅ TIMESTAMP WITH TIME ZONE
