@@ -2,9 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import Any, Dict, Optional
 import logging
-
+import json
 from ..database import get_db
 from .. import models
+from ..utils import get_openai_client, MODEL_NAME  # you already have these
 
 router = APIRouter(tags=["task-history"])
 logger = logging.getLogger(__name__)
@@ -12,8 +13,8 @@ logger = logging.getLogger(__name__)
 # =========================================================
 # Pydantic Schema (keep in this file or move to schemas.py)
 # =========================================================
-from pydantic import BaseModel
-from typing import Dict, Any, Optional
+from pydantic import BaseModel, Field
+from typing import Dict, Any, Optional,List
 
 
 class TaskHistoryUpsertRequest(BaseModel):
@@ -21,6 +22,11 @@ class TaskHistoryUpsertRequest(BaseModel):
     type_test: str          # ✅ column name is type_test
     status: str
     response_stored: Optional[Dict[str, Any]] = None
+    image_descriptors: Optional[List[str]] = Field(
+        default=None,
+        description="List of short descriptions of images used to generate a 3-word task name"
+    )
+
 
 
 # =========================================================
@@ -121,7 +127,6 @@ def upsert_task_history(
             .first()
         )
 
-        # create if missing
         if not row:
             row = models.TaskHistory(
                 task_id=payload.task_id,
@@ -134,6 +139,57 @@ def upsert_task_history(
         if payload.response_stored is not None:
             row.response_stored = payload.response_stored
 
+        # ===================================================
+        # ✅ BASIC LLM NAME GENERATION
+        # ===================================================
+        if payload.image_descriptors:
+
+            client = get_openai_client()
+
+            prompt = f"""
+Generate a professional 3 word task name.
+
+Type: {payload.type_test}
+
+Rules:
+- EXACTLY 3 words
+- No punctuation
+- Title Case
+
+If type is 'qual':
+Create recommendation name for improving marketing images.
+
+If type is 'quant':
+Create mathematical recommendation name.
+
+Image Descriptions:
+{payload.image_descriptors}
+
+Return ONLY JSON:
+{{"type_name":"Three Word Name"}}
+"""
+
+            try:
+                resp = client.chat.completions.create(
+                    model=MODEL_NAME,
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.2,
+                )
+
+                content = resp.choices[0].message.content
+                data = json.loads(content)
+
+                row.task_name = data.get("type_name")
+
+            except Exception:
+                # simple fallback
+                if payload.type_test == "qual":
+                    row.task_name = "Image Improvement Recommendations {payload.task_id}"
+                else:
+                    row.task_name = 'Quantitative Metric Recommendations {payload.task_id}'
+
+        # ===================================================
+
         db.commit()
         db.refresh(row)
 
@@ -141,6 +197,7 @@ def upsert_task_history(
             "message": "Task history upserted successfully",
             "task_id": str(row.task_id),
             "type_test": row.type_test,
+            "task_name": row.task_name,
             "status": row.status,
         }
 

@@ -441,6 +441,7 @@ class SyntheticImageResultV2(BaseModel):
     asset_id: str
     image_id: Optional[str] = None
     image_url: Optional[str] = None
+    image_descriptor: Optional[str] = None
     asset_url: Optional[str] = None
     image_name: Optional[str] = None
     thumbnail_url: Optional[str] = None
