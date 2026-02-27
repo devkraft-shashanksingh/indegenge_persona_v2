@@ -36,33 +36,40 @@ class TaskHistoryUpsertRequest(BaseModel):
 def list_task_ids(
     limit: int = Query(20, ge=1, le=200),
     offset: int = Query(0, ge=0),
-    type_test: Optional[str] = Query(None, description="Optional filter by type_test (e.g., qual/quant)"),
+    type_test: Optional[str] = Query(
+        None,
+        description="Optional filter by type_test (e.g., qual/quant)"
+    ),
     db: Session = Depends(get_db),
 ):
     try:
         q = db.query(models.TaskHistory)
 
+        # optional filter
         if type_test:
             q = q.filter(models.TaskHistory.type_test == type_test)
 
         total = q.count()
 
-        if hasattr(models.TaskHistory, "created_at"):
-            q = q.order_by(models.TaskHistory.created_at.desc())
-        else:
-            q = q.order_by(models.TaskHistory.task_id.desc())
+        # ✅ Latest first (current first)
+        q = q.order_by(
+            models.TaskHistory.created_at.desc(),
+            models.TaskHistory.task_id.desc(),   # tie-breaker
+        )
 
         rows = q.offset(offset).limit(limit).all()
 
         items = []
         for r in rows:
-            items.append({
-                "task_id": str(getattr(r, "task_id", "")),
-                "type_test": getattr(r, "type_test", None),
-                "task_name":getattr(r, "task_name", None),
-                "status": getattr(r, "status", None),
-                "created_at": getattr(r, "created_at", None) if hasattr(r, "created_at") else None,
-            })
+            items.append(
+                {
+                    "task_id": str(getattr(r, "task_id", "")),
+                    "type_test": getattr(r, "type_test", None),
+                    "task_name": getattr(r, "task_name", None),
+                    "status": getattr(r, "status", None),
+                    "created_at": getattr(r, "created_at", None),
+                }
+            )
 
         return {
             "total": total,
@@ -74,7 +81,7 @@ def list_task_ids(
     except Exception as e:
         logger.exception("Failed to list task ids")
         raise HTTPException(status_code=500, detail=f"Failed to list task ids: {str(e)}")
-
+    
 
 # =========================================================
 # 2) GET: Fetch full task record by task_id (+ optional type_test)
