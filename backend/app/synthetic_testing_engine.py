@@ -1,120 +1,569 @@
-"""
-Synthetic Testing Engine for PharmaPersonaSim.
+# """
+# Synthetic Testing Engine for PharmaPersonaSim.
 
-This module provides "Synthetic Testing" capabilities:
-1. Objective scoring (1-7 scale) of marketing assets against key metrics.
-2. Structured qualitative feedback (What works, what doesn't, improvements).
-3. Aggregation of results across multiple personas and assets.
-"""
+# This module provides "Synthetic Testing" capabilities:
+# 1. Objective scoring (1-7 scale) of marketing assets against key metrics.
+# 2. Structured qualitative feedback (What works, what doesn't, improvements).
+# 3. Aggregation of results across multiple personas and assets.
+# """
+
+# import os
+# import json
+# import logging
+# import base64
+# import concurrent.futures
+# from typing import Dict, Any, List, Optional
+# from datetime import datetime
+# import requests
+
+# from .utils import get_openai_client, MODEL_NAME
+# from . import crud
+
+# # Configure logging
+# logger = logging.getLogger(__name__)
+
+# # Model token limit
+# MODEL_MAX_TOKENS = int(os.getenv("OPENAI_MODEL_MAX_TOKENS", "32768"))
+
+# def _extract_json(text: str) -> str:
+#     """Attempt to extract the first JSON object from arbitrary model text."""
+#     import re
+#     if not text:
+#         return "{}"
+#     # Remove fences
+#     if text.startswith("```"):
+#         text = re.sub(r"^```(json)?", "", text.strip(), flags=re.IGNORECASE).strip()
+#     if text.endswith("```"):
+#         text = text[:-3].strip()
+#     # Fast path
+#     try:
+#         json.loads(text)
+#         return text
+#     except Exception:
+#         pass
+#     # Regex object match
+#     match = re.search(r"\{[\s\S]*\}", text)
+#     if match:
+#         candidate = match.group(0)
+#         try:
+#             json.loads(candidate)
+#             return candidate
+#         except Exception:
+#             return "{}"
+#     return "{}"
+
+# def _chat_json_synthetic(messages: List[Dict[str, Any]], max_completion_tokens: Optional[int] = None) -> Dict[str, Any]:
+#     """Call chat.completions ensuring JSON-only output."""
+#     client = get_openai_client()
+#     if client is None:
+#         return {"error": "OpenAI API key not configured"}
+    
+#     if max_completion_tokens is None:
+#         max_completion_tokens = 2048
+    
+#     enforce = "\n\nReturn ONLY valid JSON. No commentary."
+#     if messages and messages[-1].get("role") == "user":
+#         for part in messages[-1].get("content", []):
+#             if part.get("type") == "text":
+#                 part["text"] += enforce
+#                 break
+#         else:
+#             messages[-1]["content"].append({"type": "text", "text": enforce})
+
+#     try:
+#         response = client.chat.completions.create(
+#             model=MODEL_NAME,
+#             messages=messages,
+#             max_completion_tokens=max_completion_tokens,
+#             temperature=0.4, # Lower temperature for stable scoring
+#             response_format={"type": "json_object"}
+#         )
+        
+#         raw = response.choices[0].message.content if response.choices else "{}"
+#         return json.loads(_extract_json(raw))
+            
+#     except Exception as e:
+#         logger.error(f"❌ OpenAI API call failed: {e}")
+#         return {"error": f"Analysis failed: {str(e)}"}
+
+# def create_synthetic_prompt(
+#     persona: Dict[str, Any],
+#     asset_name: str,
+#     stimulus_text: str,
+#     has_image: bool
+# ) -> str:
+#     """Creates the prompt for synthetic testing."""
+    
+#     # Extract key persona attributes
+#     full_persona = persona.get('full_persona', {})
+#     segment = full_persona.get('persona_subtype') or full_persona.get('segment', 'Standard')
+#     role = full_persona.get('specialty') or persona.get('condition', 'Patient')
+    
+#     content_desc = f"Message: \"{stimulus_text}\"" if stimulus_text else ""
+#     if has_image:
+#         content_desc += "\n(See attached image)"
+
+#     return f"""
+# You are simulating {persona['name']}, a {role} ({segment}), evaluating a pharmaceutical marketing asset named "{asset_name}".
+
+# **YOUR PROFILE:**
+# - Age: {persona['age']}
+# - Gender: {persona['gender']}
+# - Location: {persona['location']}
+# - Bio: {json.dumps(full_persona.get('core', {}), indent=2)}
+# - Additional Context: {json.dumps(persona.get('additional_context', {}), indent=2)}
+
+# **MARKETING ASSET:**
+# {content_desc}
+
+# **TASK:**
+# Evaluate this asset objectively on a 1-7 scale (1 = Poor/Low, 7 = Excellent/High) and provide specific qualitative feedback.
+
+# **GUIDELINES FOR FEEDBACK:**
+# - **BE CONCISE**: Use short, punchy bullet points (maximum 15 words per bullet).
+# - **BE DIRECT**: Go straight to the point. No fluff.
+# - **AVOID MARKETER ARGOT**: Speak as the patient/HCP would naturally but clearly.
+
+# **METRICS TO SCORE (1-7):**
+# 1. **Motivation to Prescribe** (or "Ask for" if patient): How strongly does this motivate action?
+# 2. **Connection to Story**: Does the narrative/visual connect with your reality?
+# 3. **Differentiation**: Is this unique compared to other treatments?
+# 4. **Believability**: Do you trust this message?
+# 5. **Stopping Power**: Does this grab your attention immediately?
+
+# **QUALITATIVE FEEDBACK SECTIONS:**
+# 1. **Does Well**: What this cover concept does well.
+# 2. **Challenges**: What this cover concept does NOT do as well.
+# 3. **Considerations**: Considerations to improve the cover concept.
+
+# **OUTPUT JSON FORMAT:**
+# {{
+#     "scores": {{
+#         "motivation_to_prescribe": <1-7 int>,
+#         "connection_to_story": <1-7 int>,
+#         "differentiation": <1-7 int>,
+#         "believability": <1-7 int>,
+#         "stopping_power": <1-7 int>
+#     }},
+#     "feedback": {{
+#         "does_well": ["<concise bullet 1>", "<concise bullet 2>"],
+#         "does_not_do_well": ["<concise bullet 1>", "<concise bullet 2>"],
+#         "considerations": ["<concise bullet 1>", "<concise bullet 2>"]
+#     }}
+# }}
+# """
+
+# def analyze_single_asset_persona(
+#     persona_dict: Dict[str, Any],
+#     asset: Dict[str, Any]
+# ) -> Dict[str, Any]:
+#     """Analyze one asset for one persona."""
+    
+#     asset_name = asset.get('name', 'Unnamed Asset')
+#     image_data = asset.get('data') 
+#     text_content = asset.get('text', '')
+    
+#     prompt = create_synthetic_prompt(
+#         persona_dict, 
+#         asset_name, 
+#         text_content, 
+#         has_image=bool(image_data)
+#     )
+    
+#     messages = [{"role": "user", "content": []}]
+#     messages[0]["content"].append({"type": "text", "text": prompt})
+    
+#     if image_data:
+#         # data is base64 string
+#         messages[0]["content"].append({
+#             "type": "image_url",
+#             "image_url": {"url": f"data:image/png;base64,{image_data}"}
+#         })
+        
+#     result = _chat_json_synthetic(messages)
+    
+#     if "error" in result:
+#         return {
+#             "persona_id": persona_dict['id'],
+#             "asset_id": asset.get('id'),
+#             "error": result["error"]
+#         }
+        
+#     # Calculate Overall Preference (Aggregate of 5 metrics)
+#     scores = result.get("scores", {})
+#     total_score = sum(scores.values()) if scores else 0
+#     # Normalize 5-35 sum to 0-100% preference
+#     # (Score - 5) / (35 - 5) * 100 roughly
+#     # Actually, simpler: Average score (1.0-7.0) 
+#     # Let's map 1->0%, 4->50%, 7->100%
+#     avg_score = total_score / 5.0 if scores else 0
+#     preference_pct = int(((avg_score - 1) / 6.0) * 100) if avg_score >= 1 else 0
+    
+#     return {
+#         "persona_id": persona_dict['id'],
+#         "persona_name": persona_dict['name'],
+#         "asset_id": asset.get('id'),
+#         "scores": scores,
+#         "overall_preference_score": preference_pct,
+#         "feedback": result.get("feedback", {})
+#     }
+
+# def image_url_to_base64(url: str, timeout: int = 20) -> Dict[str, Optional[str]]:
+#     r = requests.get(url, timeout=timeout)
+#     r.raise_for_status()
+
+#     content_type = (r.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+
+#     if content_type in ("image/png", "image/jpeg", "image/jpg", "image/webp"):
+#         mime = "image/jpeg" if content_type == "image/jpg" else content_type
+#     else:
+#         mime = "image/png"
+
+#     b64 = base64.b64encode(r.content).decode("utf-8")
+#     return {"base64": b64, "mime": mime}
+
+
+# def analyze_single_asset_persona_via_url(
+#     persona_dict: Dict[str, Any],
+#     asset: Dict[str, Any]
+# ) -> Dict[str, Any]:
+
+#     asset_name = asset.get("name", "Unnamed Asset")
+#     text_content = asset.get("text", "")
+
+#     image_data = None
+#     mime = "image/png"
+
+#     asset_url = asset.get("data")
+#     if asset_url:
+#         try:
+#             out = image_url_to_base64(asset_url)
+#             image_data = out["base64"]
+#             mime = out["mime"] or "image/png"
+#         except Exception as e:
+#             return {
+#         "persona_id": persona_dict["id"],
+#         "persona_name": persona_dict["name"],
+#         "asset_id": asset.get("id"),
+#         "image_id":asset.get("id"),
+#         "image_name":asset.get("name"),
+#         "thumbnail_url":asset.get("thumbnail_url"),
+#         "thumbnail_url_str":asset.get("thumbnail_url_str"),
+#         "image_url": asset.get("data"),
+#         "asset_url":asset.get("data"),
+#                 "error": f"Failed to fetch/encode image url: {str(e)}"
+#             }
+
+#     prompt = create_synthetic_prompt(
+#         persona_dict,
+#         asset_name,
+#         text_content,
+#         has_image=bool(image_data)
+#     )
+
+#     messages = [{"role": "user", "content": [{"type": "text", "text": prompt}]}]
+
+#     if image_data:
+#         messages[0]["content"].append({
+#             "type": "image_url",
+#             "image_url": {"url": f"data:{mime};base64,{image_data}"}
+#         })
+
+#     result = _chat_json_synthetic(messages)
+
+#     if "error" in result:
+#         return {
+#              "persona_id": persona_dict["id"],
+#         "persona_name": persona_dict["name"],
+#         "asset_id": asset.get("id"),
+#         "image_id":asset.get("id"),
+#         "image_name":asset.get("name"),
+#         "thumbnail_url":asset.get("thumbnail_url"),
+#         "thumbnail_url_str":asset.get("thumbnail_url_str"),
+#         "image_url": asset.get("data"),
+#         "asset_url":asset.get("data"),
+#             "error": result["error"]
+#         }
+
+#     scores = result.get("scores", {}) or {}
+#     total_score = sum(scores.values()) if scores else 0
+#     avg_score = (total_score / 5.0) if scores else 0
+#     preference_pct = int(((avg_score - 1) / 6.0) * 100) if avg_score >= 1 else 0
+
+#     if preference_pct < 0:
+#         preference_pct = 0
+#     if preference_pct > 100:
+#         preference_pct = 100
+
+#     return {
+#         "persona_id": persona_dict["id"],
+#         "persona_name": persona_dict["name"],
+#         "asset_id": asset.get("id"),
+#         "image_id":asset.get("id"),
+#         "image_name":asset.get("name"),
+#         "thumbnail_url":asset.get("thumbnail_url"),
+#         "thumbnail_url_str":asset.get("thumbnail_url_str"),
+#         "image_url": asset.get("data"),
+#         "asset_url":asset.get("data"),
+#         "scores": scores,
+#         "overall_preference_score": preference_pct,
+#         "feedback": result.get("feedback", {}) or {}
+#     }
+
+
+# def run_synthetic_testing(
+#     persona_ids: List[int],
+#     assets: List[Dict[str, Any]],
+#     db = None
+# ) -> Dict[str, Any]:
+#     """
+#     Run synthetic testing for multiple assets and personas.
+    
+#     Args:
+#         persona_ids: List of persona IDs
+#         assets: List of dicts {id: str, name: str, data: str|None, text: str}
+#     """
+    
+#     # Fetch personas
+#     try:
+#         personas = []
+#         for pid in persona_ids:
+#             p = crud.get_persona(db, pid)
+#             if p:
+#                 personas.append({
+#                     'id': p.id,
+#                     'name': p.name,
+#                     'age': p.age,
+#                     'gender': p.gender,
+#                     'location': p.location,
+#                     'condition': p.condition,
+#                     'condition': p.condition,
+#                     'full_persona': json.loads(p.full_persona_json) if getattr(p, 'full_persona_json', None) else {},
+#                     'additional_context': p.additional_context or {}
+#                 })
+                
+#         if not personas:
+#             return {"error": "No valid personas found"}
+
+#         results = []
+        
+#         # Process all combinations in parallel
+#         with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+#             futures = []
+#             for persona in personas:
+#                 for asset in assets:
+#                     futures.append(
+#                         executor.submit(analyze_single_asset_persona, persona, asset)
+#                     )
+                    
+#             for future in concurrent.futures.as_completed(futures):
+#                 try:
+#                     res = future.result()
+#                     results.append(res)
+#                 except Exception as e:
+#                     import traceback
+#                     logger.error(f"Analysis task failed: {e}\n{traceback.format_exc()}")
+
+#         # Aggregation
+#         aggregated_results = {} # asset_id -> {metrics_avg, feedback_summary}
+        
+#         for asset in assets:
+#             a_id = asset['id']
+#             asset_responses = [r for r in results if r.get('asset_id') == a_id and 'error' not in r]
+            
+#             if not asset_responses:
+#                 continue
+                
+#             # Calc averages
+#             count = len(asset_responses)
+#             avg_scores = {
+#                 "motivation_to_prescribe": 0.0,
+#                 "connection_to_story": 0.0,
+#                 "differentiation": 0.0,
+#                 "believability": 0.0,
+#                 "stopping_power": 0.0
+#             }
+#             avg_pref = 0.0
+            
+#             for r in asset_responses:
+#                 s = r.get('scores', {})
+#                 if not s: continue # Skip if scores missing
+#                 for k in avg_scores:
+#                     avg_scores[k] += s.get(k, 0)
+#                 avg_pref += r.get('overall_preference_score', 0)
+                
+#             for k in avg_scores:
+#                 avg_scores[k] = round(avg_scores[k] / count, 1) if count > 0 else 0
+            
+#             aggregated_results[a_id] = {
+#                 "asset_name": asset['name'],
+#                 "average_scores": avg_scores,
+#                 "average_preference": int(avg_pref / count) if count > 0 else 0,
+#                 "respondent_count": count
+#             }
+
+#         return {
+#             "results": results,
+#             "aggregated": aggregated_results,
+#             "metadata": {
+#                 "personas_count": len(personas),
+#                 "assets_count": len(assets),
+#                 "timestamp": datetime.now().isoformat()
+#             }
+#         }
+#     except Exception as e:
+#         import traceback
+#         logger.error(f"Global synthetic testing error: {e}\n{traceback.format_exc()}")
+#         raise e
+
+
+
+# def run_synthetic_testingV2(
+#     campaign_id:str,
+#     task_id:str,
+#     persona_ids: List[int],
+#     assets: List[Dict[str, Any]],
+#     db = None
+# ) -> Dict[str, Any]:
+#     """
+#     Run synthetic testing for multiple assets and personas.
+    
+#     Args:
+#         persona_ids: List of persona IDs
+#         assets: List of dicts {id: str, name: str, data: str|None, text: str}
+#     """
+    
+#     # Fetch personas
+#     try:
+#         personas = []
+#         for pid in persona_ids:
+#             p = crud.get_persona(db, pid)
+#             if p:
+#                 personas.append({
+#                     'id': p.id,
+#                     'name': p.name,
+#                     'age': p.age,
+#                     'gender': p.gender,
+#                     'location': p.location,
+#                     'condition': p.condition,
+#                     'condition': p.condition,
+#                     'full_persona': json.loads(p.full_persona_json) if getattr(p, 'full_persona_json', None) else {},
+#                     'additional_context': p.additional_context or {}
+#                 })
+                
+#         if not personas:
+#             return {"error": "No valid personas found"}
+
+#         results = []
+        
+#         # Process all combinations in parallel
+#         with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+#             futures = []
+#             for persona in personas:
+#                 for asset in assets:
+#                     futures.append(
+#                         executor.submit(analyze_single_asset_persona_via_url, persona, asset)
+#                     )
+                    
+#             for future in concurrent.futures.as_completed(futures):
+#                 try:
+#                     res = future.result()
+#                     results.append(res)
+#                 except Exception as e:
+#                     import traceback
+#                     logger.error(f"Analysis task failed: {e}\n{traceback.format_exc()}")
+
+#         # Aggregation
+#         aggregated_results = {} # asset_id -> {metrics_avg, feedback_summary}
+        
+#         for asset in assets:
+#             a_id = asset['id']
+#             asset_responses = [r for r in results if r.get('asset_id') == a_id and 'error' not in r]
+            
+#             if not asset_responses:
+#                 continue
+                
+#             # Calc averages
+#             count = len(asset_responses)
+#             avg_scores = {
+#                 "motivation_to_prescribe": 0.0,
+#                 "connection_to_story": 0.0,
+#                 "differentiation": 0.0,
+#                 "believability": 0.0,
+#                 "stopping_power": 0.0
+#             }
+#             avg_pref = 0.0
+            
+#             for r in asset_responses:
+#                 s = r.get('scores', {})
+#                 if not s: continue # Skip if scores missing
+#                 for k in avg_scores:
+#                     avg_scores[k] += s.get(k, 0)
+#                 avg_pref += r.get('overall_preference_score', 0)
+                
+#             for k in avg_scores:
+#                 avg_scores[k] = round(avg_scores[k] / count, 1) if count > 0 else 0
+            
+#             aggregated_results[a_id] = {
+#                 "asset_name": asset['name'],
+#                 "average_scores": avg_scores,
+#                 "average_preference": int(avg_pref / count) if count > 0 else 0,
+#                 "respondent_count": count
+#             }
+
+#         return {
+#             "results": results,
+#             "aggregated": aggregated_results,
+#             "metadata": {
+#                 "campaign_id":campaign_id,
+#                 "task_id":task_id,
+#                 "personas_count": len(personas),
+#                 "assets_count": len(assets),
+#                 "timestamp": datetime.now().isoformat()
+#             }
+#         }
+#     except Exception as e:
+#         import traceback
+#         logger.error(f"Global synthetic testing error: {e}\n{traceback.format_exc()}")
+#         raise e
+
+
+
 
 import os
 import json
 import logging
 import base64
 import concurrent.futures
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime
+
 import requests
 
 from .utils import get_openai_client, MODEL_NAME
 from . import crud
 
-# Configure logging
 logger = logging.getLogger(__name__)
 
-# Model token limit
 MODEL_MAX_TOKENS = int(os.getenv("OPENAI_MODEL_MAX_TOKENS", "32768"))
 
-def _extract_json(text: str) -> str:
-    """Attempt to extract the first JSON object from arbitrary model text."""
-    import re
-    if not text:
-        return "{}"
-    # Remove fences
-    if text.startswith("```"):
-        text = re.sub(r"^```(json)?", "", text.strip(), flags=re.IGNORECASE).strip()
-    if text.endswith("```"):
-        text = text[:-3].strip()
-    # Fast path
-    try:
-        json.loads(text)
-        return text
-    except Exception:
-        pass
-    # Regex object match
-    match = re.search(r"\{[\s\S]*\}", text)
-    if match:
-        candidate = match.group(0)
-        try:
-            json.loads(candidate)
-            return candidate
-        except Exception:
-            return "{}"
-    return "{}"
 
-def _chat_json_synthetic(messages: List[Dict[str, Any]], max_completion_tokens: Optional[int] = None) -> Dict[str, Any]:
-    """Call chat.completions ensuring JSON-only output."""
-    client = get_openai_client()
-    if client is None:
-        return {"error": "OpenAI API key not configured"}
-    
-    if max_completion_tokens is None:
-        max_completion_tokens = 2048
-    
-    enforce = "\n\nReturn ONLY valid JSON. No commentary."
-    if messages and messages[-1].get("role") == "user":
-        for part in messages[-1].get("content", []):
-            if part.get("type") == "text":
-                part["text"] += enforce
-                break
-        else:
-            messages[-1]["content"].append({"type": "text", "text": enforce})
+# =========================================================
+# ------------------- DEFAULT PROMPT TEMPLATE -------------
+# =========================================================
 
-    try:
-        response = client.chat.completions.create(
-            model=MODEL_NAME,
-            messages=messages,
-            max_completion_tokens=max_completion_tokens,
-            temperature=0.4, # Lower temperature for stable scoring
-            response_format={"type": "json_object"}
-        )
-        
-        raw = response.choices[0].message.content if response.choices else "{}"
-        return json.loads(_extract_json(raw))
-            
-    except Exception as e:
-        logger.error(f"❌ OpenAI API call failed: {e}")
-        return {"error": f"Analysis failed: {str(e)}"}
+DEFAULT_SYNTHETIC_PROMPT_TEMPLATE = """
+# You are {persona_name}, a {role} ({segment}), evaluating a pharmaceutical marketing asset named "{asset_name}".
 
-def create_synthetic_prompt(
-    persona: Dict[str, Any],
-    asset_name: str,
-    stimulus_text: str,
-    has_image: bool
-) -> str:
-    """Creates the prompt for synthetic testing."""
-    
-    # Extract key persona attributes
-    full_persona = persona.get('full_persona', {})
-    segment = full_persona.get('persona_subtype') or full_persona.get('segment', 'Standard')
-    role = full_persona.get('specialty') or persona.get('condition', 'Patient')
-    
-    content_desc = f"Message: \"{stimulus_text}\"" if stimulus_text else ""
-    if has_image:
-        content_desc += "\n(See attached image)"
+# **YOUR PROFILE:**
+# - Age: {persona_age}
+# - Gender: {persona_gender}
+# - Location: {persona_location}
+# - Bio: {core_bio_pretty}
+# - Additional Context: {additional_context_pretty}
 
-    return f"""
-You are simulating {persona['name']}, a {role} ({segment}), evaluating a pharmaceutical marketing asset named "{asset_name}".
-
-**YOUR PROFILE:**
-- Age: {persona['age']}
-- Gender: {persona['gender']}
-- Location: {persona['location']}
-- Bio: {json.dumps(full_persona.get('core', {}), indent=2)}
-- Additional Context: {json.dumps(persona.get('additional_context', {}), indent=2)}
-
-**MARKETING ASSET:**
-{content_desc}
+# **MARKETING ASSET:**
+# {content_desc}
 
 **TASK:**
 Evaluate this asset objectively on a 1-7 scale (1 = Poor/Low, 7 = Excellent/High) and provide specific qualitative feedback.
@@ -137,78 +586,442 @@ Evaluate this asset objectively on a 1-7 scale (1 = Poor/Low, 7 = Excellent/High
 3. **Considerations**: Considerations to improve the cover concept.
 
 **OUTPUT JSON FORMAT:**
-{{
-    "scores": {{
-        "motivation_to_prescribe": <1-7 int>,
-        "connection_to_story": <1-7 int>,
-        "differentiation": <1-7 int>,
-        "believability": <1-7 int>,
-        "stopping_power": <1-7 int>
-    }},
-    "feedback": {{
-        "does_well": ["<concise bullet 1>", "<concise bullet 2>"],
-        "does_not_do_well": ["<concise bullet 1>", "<concise bullet 2>"],
-        "considerations": ["<concise bullet 1>", "<concise bullet 2>"]
-    }}
-}}
-"""
+{
+  "scores": {
+    "motivation_to_prescribe": <1-7 int>,
+    "connection_to_story": <1-7 int>,
+    "differentiation": <1-7 int>,
+    "believability": <1-7 int>,
+    "stopping_power": <1-7 int>
+  },
+  "feedback": {
+    "does_well": ["<concise bullet 1>", "<concise bullet 2>"],
+    "does_not_do_well": ["<concise bullet 1>", "<concise bullet 2>"],
+    "considerations": ["<concise bullet 1>", "<concise bullet 2>"]
+  }
+}
+""".strip()
+
+
+# =========================================================
+# ------------------- PROMPT HELPERS ----------------------
+# =========================================================
+
+def _is_blank(s: Optional[str]) -> bool:
+    return s is None or (isinstance(s, str) and s.strip() == "")
+
+
+def _pretty_json(obj: Any) -> str:
+    """Pretty JSON for prompt readability. Never throws."""
+    try:
+        return json.dumps(obj or {}, indent=2, ensure_ascii=False, sort_keys=True)
+    except Exception:
+        return "{}"
+
+
+def _quoted(text: str) -> str:
+    """
+    Safe quoting for prompt inclusion.
+    Uses JSON string encoding so quotes/newlines are preserved.
+    Example output: "Hello \\"world\\"\nNew line"
+    """
+    try:
+        return json.dumps(text or "", ensure_ascii=False)
+    except Exception:
+        return "\"\""
+
+
+class _SafeFormatDict(dict):
+    def __missing__(self, key: str) -> str:
+        # Keep unknown placeholders untouched (prevents crashes and preserves braces)
+        return "{" + key + "}"
+
+
+def _safe_format_map(template: str, variables: Dict[str, Any]) -> str:
+    """
+    Safe .format_map:
+    - substitutes ONLY keys present in `variables`
+    - preserves unknown {placeholders} as-is
+    - if braces are malformed -> returns template as-is
+    """
+    if _is_blank(template):
+        return template or ""
+
+    try:
+        clean: Dict[str, str] = {}
+        for k, v in variables.items():
+            if v is None:
+                clean[k] = ""
+            elif isinstance(v, (dict, list, tuple)):
+                clean[k] = _pretty_json(v)
+            else:
+                clean[k] = str(v)
+
+        return template.format_map(_SafeFormatDict(clean))
+    except Exception as e:
+        logger.warning(f"[synthetic] safe_format_map failed, returning template as-is. err={e}")
+        return template
+
+
+def _safe_prompt_preview(s: str, n: int = 220) -> str:
+    s = (s or "").replace("\n", "\\n")
+    if len(s) <= n:
+        return s
+    return s[:n] + "..."
+
+
+def _build_synthetic_vars_map(
+    persona: Dict[str, Any],
+    asset_name: str,
+    stimulus_text: str,
+    has_image: bool
+) -> Dict[str, Any]:
+    """
+    Locked variables ONLY.
+    Frontend can reference these keys in synthetic_prompt, e.g.:
+      {persona_name}, {role}, {segment}, {asset_name}, {content_desc}, etc.
+    """
+    full_persona = persona.get("full_persona", {}) or {}
+    segment = full_persona.get("persona_subtype") or full_persona.get("segment", "Standard")
+    role = full_persona.get("specialty") or persona.get("condition", "Patient")
+
+    stimulus_quoted = _quoted(stimulus_text or "")
+
+    content_desc = f"Message: {stimulus_quoted}" if (stimulus_text or "").strip() else 'Message: ""'
+    if has_image:
+        content_desc += "\n(See attached image)"
+
+    locked_map = {
+        # persona basics
+        "persona_id": persona.get("id"),
+        "persona_name": persona.get("name"),
+        "persona_age": persona.get("age"),
+        "persona_gender": persona.get("gender"),
+        "persona_location": persona.get("location"),
+
+        # persona derived
+        "role": role,
+        "segment": segment,
+
+        # asset
+        "asset_name": asset_name,
+        "stimulus_text": stimulus_text or "",
+        "stimulus_text_quoted": stimulus_quoted,
+        "has_image": has_image,
+        "content_desc": content_desc,
+
+        # pretty JSON blocks (string)
+        "core_bio_pretty": _pretty_json(full_persona.get("core", {})),
+        "full_persona_pretty": _pretty_json(full_persona),
+        "additional_context_pretty": _pretty_json(persona.get("additional_context", {})),
+    }
+    return locked_map
+
+
+def create_synthetic_prompt_pair(
+    persona: Dict[str, Any],
+    asset_name: str,
+    stimulus_text: str,
+    has_image: bool,
+    synthetic_prompt: str = ""
+) -> Tuple[str, str]:
+    """
+    Returns:
+      prompt_used_for_model: rendered with locked vars (default or override)
+      prompt_echo_for_api:   raw override OR default template (unpopulated)
+    """
+    vars_map = _build_synthetic_vars_map(persona, asset_name, stimulus_text, has_image)
+    override_used = not _is_blank(synthetic_prompt)
+
+    logger.info(
+        f"[synthetic] create_synthetic_prompt_pair persona_id={vars_map.get('persona_id')} "
+        f"asset_name={asset_name} has_image={has_image} override_used={override_used}"
+    )
+
+    if override_used:
+        prompt_used = _safe_format_map(synthetic_prompt, vars_map).strip()
+        prompt_echo = synthetic_prompt.strip()  # ✅ RAW user prompt (unrendered)
+        logger.info(
+            f"[synthetic] override prompt rendered for model. locked_keys={len(vars_map)} "
+            f"prompt_used_len={len(prompt_used)} preview={_safe_prompt_preview(prompt_used)}"
+        )
+        return prompt_used, prompt_echo
+
+    # default: render for model, echo template for API (UNPOPULATED)
+    prompt_used = _safe_format_map(DEFAULT_SYNTHETIC_PROMPT_TEMPLATE, vars_map).strip()
+    prompt_echo = DEFAULT_SYNTHETIC_PROMPT_TEMPLATE
+    logger.info(
+        f"[synthetic] default prompt rendered for model. prompt_used_len={len(prompt_used)} "
+        f"preview={_safe_prompt_preview(prompt_used)}"
+    )
+    return prompt_used, prompt_echo
+
+
+# =========================================================
+# ------------------- JSON EXTRACTION ---------------------
+# =========================================================
+
+def _extract_json(text: str) -> str:
+    """Attempt to extract the first JSON object from arbitrary model text."""
+    import re
+
+    if not text:
+        return "{}"
+
+    t = text.strip()
+
+    # Remove markdown fences (```json ... ```)
+    if t.startswith("```"):
+        t = re.sub(r"^```(?:json)?", "", t, flags=re.IGNORECASE).strip()
+    if t.endswith("```"):
+        t = t[:-3].strip()
+
+    # Fast path: already JSON
+    try:
+        json.loads(t)
+        return t
+    except Exception:
+        pass
+
+    # Regex object match
+    match = re.search(r"\{[\s\S]*\}", t)
+    if match:
+        candidate = match.group(0)
+        try:
+            json.loads(candidate)
+            return candidate
+        except Exception:
+            return "{}"
+
+    return "{}"
+
+
+# =========================================================
+# ------------------- OPENAI CALL -------------------------
+# =========================================================
+
+def _chat_json_synthetic(
+    messages: List[Dict[str, Any]],
+    max_completion_tokens: Optional[int] = None
+) -> Dict[str, Any]:
+    """Call chat.completions ensuring JSON-only output."""
+    client = get_openai_client()
+    if client is None:
+        return {"error": "OpenAI API key not configured"}
+
+    if max_completion_tokens is None:
+        max_completion_tokens = 2048
+
+    # Enforce JSON in the last user message
+    enforce = "\n\nReturn ONLY valid JSON. No commentary."
+    if messages and messages[-1].get("role") == "user":
+        content = messages[-1].get("content", [])
+        if isinstance(content, list):
+            for part in content:
+                if isinstance(part, dict) and part.get("type") == "text":
+                    part["text"] = (part.get("text") or "") + enforce
+                    break
+            else:
+                content.append({"type": "text", "text": enforce})
+        else:
+            messages[-1]["content"] = [{"type": "text", "text": str(content) + enforce}]
+
+    try:
+        logger.info(f"[synthetic] OpenAI call start model={MODEL_NAME} max_completion_tokens={max_completion_tokens}")
+        response = client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=messages,
+            max_completion_tokens=max_completion_tokens,
+            temperature=0.4,
+            response_format={"type": "json_object"},
+        )
+        logger.info("[synthetic] OpenAI call success")
+
+        raw = response.choices[0].message.content if response.choices else "{}"
+        return json.loads(_extract_json(raw))
+
+    except Exception as e:
+        logger.error(f"❌ OpenAI API call failed: {e}")
+        return {"error": f"Analysis failed: {str(e)}"}
+
+
+# =========================================================
+# ------------------- SCORE NORMALIZATION -----------------
+# =========================================================
+
+def _to_int_1_7(x: Any) -> int:
+    try:
+        if isinstance(x, bool):
+            return 0
+        if isinstance(x, (int, float)):
+            v = int(round(float(x)))
+        elif isinstance(x, str):
+            v = int(round(float(x.strip())))
+        else:
+            return 0
+        if v < 1:
+            return 1
+        if v > 7:
+            return 7
+        return v
+    except Exception:
+        return 0
+
+
+def _normalize_scores_required(scores: Any) -> Dict[str, int]:
+    """
+    Ensures API response always includes the 5 required score fields.
+    Missing/invalid => 0
+    """
+    if not isinstance(scores, dict):
+        scores = {}
+
+    return {
+        "motivation_to_prescribe": _to_int_1_7(scores.get("motivation_to_prescribe")),
+        "connection_to_story": _to_int_1_7(scores.get("connection_to_story")),
+        "differentiation": _to_int_1_7(scores.get("differentiation")),
+        "believability": _to_int_1_7(scores.get("believability")),
+        "stopping_power": _to_int_1_7(scores.get("stopping_power")),
+    }
+
+
+# =========================================================
+# ------------------- FEEDBACK NORMALIZATION --------------
+# =========================================================
+
+def _as_list_str(x: Any) -> List[str]:
+    """
+    Always returns list[str].
+    - None/missing -> []
+    - string -> [string] (if non-empty)
+    - list -> keep only non-empty strings
+    - everything else -> []
+    """
+    if x is None:
+        return []
+    if isinstance(x, str):
+        s = x.strip()
+        return [s] if s else []
+    if isinstance(x, list):
+        out: List[str] = []
+        for v in x:
+            if isinstance(v, str):
+                s = v.strip()
+                if s:
+                    out.append(s)
+        return out
+    return []
+
+
+def _normalize_feedback(feedback: Any) -> Dict[str, List[str]]:
+    """
+    Ensures feedback sections are lists.
+    If model doesn't return something usable -> empty lists.
+    """
+    if not isinstance(feedback, dict):
+        feedback = {}
+
+    return {
+        "does_well": _as_list_str(feedback.get("does_well")),
+        "does_not_do_well": _as_list_str(feedback.get("does_not_do_well")),
+        "considerations": _as_list_str(feedback.get("considerations")),
+    }
+
+
+# =========================================================
+# ------------------- SINGLE ANALYSIS ---------------------
+# =========================================================
 
 def analyze_single_asset_persona(
     persona_dict: Dict[str, Any],
-    asset: Dict[str, Any]
+    asset: Dict[str, Any],
+    synthetic_prompt: str = ""
 ) -> Dict[str, Any]:
-    """Analyze one asset for one persona."""
-    
-    asset_name = asset.get('name', 'Unnamed Asset')
-    image_data = asset.get('data') 
-    text_content = asset.get('text', '')
-    
-    prompt = create_synthetic_prompt(
-        persona_dict, 
-        asset_name, 
-        text_content, 
-        has_image=bool(image_data)
+    """Analyze one asset for one persona (image as base64 already)."""
+
+    asset_name = asset.get("name", "Unnamed Asset")
+    image_data = asset.get("data")  # base64 string
+    text_content = asset.get("text", "")
+
+    logger.info(
+        f"[synthetic] analyze_single_asset_persona start persona_id={persona_dict.get('id')} "
+        f"asset_id={asset.get('id')} has_image={bool(image_data)} override_provided={not _is_blank(synthetic_prompt)}"
     )
-    
-    messages = [{"role": "user", "content": []}]
-    messages[0]["content"].append({"type": "text", "text": prompt})
-    
+
+    prompt_used, prompt_echo = create_synthetic_prompt_pair(
+        persona_dict,
+        asset_name,
+        text_content,
+        has_image=bool(image_data),
+        synthetic_prompt=synthetic_prompt,
+    )
+
+    logger.info(
+        f"[synthetic] prompt selected persona_id={persona_dict.get('id')} asset_id={asset.get('id')} "
+        f"echo_is_default={_is_blank(synthetic_prompt)} prompt_used_len={len(prompt_used)} prompt_echo_len={len(prompt_echo)}"
+    )
+
+    messages = [{"role": "user", "content": [{"type": "text", "text": prompt_used}]}]
+
     if image_data:
-        # data is base64 string
+        logger.info(f"[synthetic] attaching base64 image asset_id={asset.get('id')} b64_len={len(image_data)}")
         messages[0]["content"].append({
             "type": "image_url",
-            "image_url": {"url": f"data:image/png;base64,{image_data}"}
+            "image_url": {"url": f"data:image/png;base64,{image_data}"},
         })
-        
+
+    logger.info(f"[synthetic] OpenAI analyze start persona_id={persona_dict.get('id')} asset_id={asset.get('id')}")
     result = _chat_json_synthetic(messages)
-    
+    logger.info(f"[synthetic] OpenAI analyze end persona_id={persona_dict.get('id')} asset_id={asset.get('id')}")
+
     if "error" in result:
+        logger.error(
+            f"[synthetic] analysis failed persona_id={persona_dict.get('id')} asset_id={asset.get('id')} err={result.get('error')}"
+        )
         return {
-            "persona_id": persona_dict['id'],
-            "asset_id": asset.get('id'),
-            "error": result["error"]
+            "persona_id": persona_dict["id"],
+            "persona_name": persona_dict["name"],
+            "asset_id": asset.get("id"),
+            "synthetic_prompt": prompt_echo,  # ✅ RAW user prompt or DEFAULT TEMPLATE
+            "error": result["error"],
         }
-        
-    # Calculate Overall Preference (Aggregate of 5 metrics)
-    scores = result.get("scores", {})
-    total_score = sum(scores.values()) if scores else 0
-    # Normalize 5-35 sum to 0-100% preference
-    # (Score - 5) / (35 - 5) * 100 roughly
-    # Actually, simpler: Average score (1.0-7.0) 
-    # Let's map 1->0%, 4->50%, 7->100%
-    avg_score = total_score / 5.0 if scores else 0
-    preference_pct = int(((avg_score - 1) / 6.0) * 100) if avg_score >= 1 else 0
-    
+
+    scores = _normalize_scores_required(result.get("scores", None))
+    feedback = _normalize_feedback(result.get("feedback", None))
+
+    # preference score: average of only valid (1..7) values
+    vals = [v for v in scores.values() if isinstance(v, int) and 1 <= v <= 7]
+    if vals:
+        avg_score = sum(vals) / float(len(vals))
+        preference_pct = int(((avg_score - 1) / 6.0) * 100) if avg_score >= 1 else 0
+        preference_pct = max(0, min(100, preference_pct))
+    else:
+        avg_score = 0.0
+        preference_pct = 0
+
+    logger.info(
+        f"[synthetic] analysis success persona_id={persona_dict.get('id')} asset_id={asset.get('id')} "
+        f"avg_score={avg_score:.2f} preference_pct={preference_pct}"
+    )
+
     return {
-        "persona_id": persona_dict['id'],
-        "persona_name": persona_dict['name'],
-        "asset_id": asset.get('id'),
+        "persona_id": persona_dict["id"],
+        "persona_name": persona_dict["name"],
+        "asset_id": asset.get("id"),
+        "synthetic_prompt": prompt_echo,  # ✅ RAW user prompt or DEFAULT TEMPLATE
         "scores": scores,
         "overall_preference_score": preference_pct,
-        "feedback": result.get("feedback", {})
+        "feedback": feedback,
     }
 
+
+# =========================================================
+# ------------------- IMAGE URL -> B64 --------------------
+# =========================================================
+
 def image_url_to_base64(url: str, timeout: int = 20) -> Dict[str, Optional[str]]:
+    logger.info(f"[synthetic] image_url_to_base64 start url_present={bool(url)} timeout={timeout}")
+
     r = requests.get(url, timeout=timeout)
     r.raise_for_status()
 
@@ -220,16 +1033,27 @@ def image_url_to_base64(url: str, timeout: int = 20) -> Dict[str, Optional[str]]
         mime = "image/png"
 
     b64 = base64.b64encode(r.content).decode("utf-8")
+
+    logger.info(
+        f"[synthetic] image_url_to_base64 success content_type={content_type} mime={mime} bytes={len(r.content)} b64_len={len(b64)}"
+    )
     return {"base64": b64, "mime": mime}
 
 
 def analyze_single_asset_persona_via_url(
     persona_dict: Dict[str, Any],
-    asset: Dict[str, Any]
+    asset: Dict[str, Any],
+    synthetic_prompt: str = ""
 ) -> Dict[str, Any]:
+    """Analyze one asset for one persona (image fetched by URL)."""
 
     asset_name = asset.get("name", "Unnamed Asset")
     text_content = asset.get("text", "")
+
+    logger.info(
+        f"[synthetic] analyze_single_asset_persona_via_url start persona_id={persona_dict.get('id')} "
+        f"asset_id={asset.get('id')} override_provided={not _is_blank(synthetic_prompt)}"
+    )
 
     image_data = None
     mime = "image/png"
@@ -237,170 +1061,240 @@ def analyze_single_asset_persona_via_url(
     asset_url = asset.get("data")
     if asset_url:
         try:
+            logger.info(f"[synthetic] fetching image url asset_id={asset.get('id')}")
             out = image_url_to_base64(asset_url)
             image_data = out["base64"]
             mime = out["mime"] or "image/png"
+            logger.info(f"[synthetic] image fetched+encoded asset_id={asset.get('id')} mime={mime} b64_len={len(image_data)}")
         except Exception as e:
+            logger.error(f"[synthetic] image fetch failed asset_id={asset.get('id')} err={e}")
+
+            prompt_used, prompt_echo = create_synthetic_prompt_pair(
+                persona_dict,
+                asset_name,
+                text_content,
+                has_image=False,
+                synthetic_prompt=synthetic_prompt,
+            )
+
             return {
-        "persona_id": persona_dict["id"],
-        "persona_name": persona_dict["name"],
-        "asset_id": asset.get("id"),
-        "image_id":asset.get("id"),
-        "image_name":asset.get("name"),
-        "thumbnail_url":asset.get("thumbnail_url"),
-        "thumbnail_url_str":asset.get("thumbnail_url_str"),
-        "image_url": asset.get("data"),
-        "asset_url":asset.get("data"),
-                "error": f"Failed to fetch/encode image url: {str(e)}"
+                "persona_id": persona_dict["id"],
+                "persona_name": persona_dict["name"],
+                "asset_id": asset.get("id"),
+                "image_id": asset.get("id"),
+                "image_name": asset.get("name"),
+                "thumbnail_url": asset.get("thumbnail_url"),
+                "thumbnail_url_str": asset.get("thumbnail_url_str"),
+                "image_url": asset.get("data"),
+                "asset_url": asset.get("data"),
+                "synthetic_prompt": prompt_echo,  # ✅ RAW user prompt or DEFAULT TEMPLATE
+                "scores": _normalize_scores_required(None),  # ✅ satisfy pydantic
+                "overall_preference_score": 0,
+                "feedback": _normalize_feedback(None),
+                "error": f"Failed to fetch/encode image url: {str(e)}",
             }
 
-    prompt = create_synthetic_prompt(
+    prompt_used, prompt_echo = create_synthetic_prompt_pair(
         persona_dict,
         asset_name,
         text_content,
-        has_image=bool(image_data)
+        has_image=bool(image_data),
+        synthetic_prompt=synthetic_prompt,
     )
 
-    messages = [{"role": "user", "content": [{"type": "text", "text": prompt}]}]
+    logger.info(
+        f"[synthetic] prompt selected via_url persona_id={persona_dict.get('id')} asset_id={asset.get('id')} "
+        f"echo_is_default={_is_blank(synthetic_prompt)} prompt_used_len={len(prompt_used)} prompt_echo_len={len(prompt_echo)}"
+    )
+
+    messages = [{"role": "user", "content": [{"type": "text", "text": prompt_used}]}]
 
     if image_data:
         messages[0]["content"].append({
             "type": "image_url",
-            "image_url": {"url": f"data:{mime};base64,{image_data}"}
+            "image_url": {"url": f"data:{mime};base64,{image_data}"},
         })
 
+    logger.info(f"[synthetic] OpenAI analyze start via_url persona_id={persona_dict.get('id')} asset_id={asset.get('id')}")
     result = _chat_json_synthetic(messages)
+    logger.info(f"[synthetic] OpenAI analyze end via_url persona_id={persona_dict.get('id')} asset_id={asset.get('id')}")
 
     if "error" in result:
+        logger.error(
+            f"[synthetic] analysis failed via_url persona_id={persona_dict.get('id')} asset_id={asset.get('id')} err={result.get('error')}"
+        )
         return {
-             "persona_id": persona_dict["id"],
-        "persona_name": persona_dict["name"],
-        "asset_id": asset.get("id"),
-        "image_id":asset.get("id"),
-        "image_name":asset.get("name"),
-        "thumbnail_url":asset.get("thumbnail_url"),
-        "thumbnail_url_str":asset.get("thumbnail_url_str"),
-        "image_url": asset.get("data"),
-        "asset_url":asset.get("data"),
-            "error": result["error"]
+            "persona_id": persona_dict["id"],
+            "persona_name": persona_dict["name"],
+            "asset_id": asset.get("id"),
+            "image_id": asset.get("id"),
+            "image_name": asset.get("name"),
+            "thumbnail_url": asset.get("thumbnail_url"),
+            "thumbnail_url_str": asset.get("thumbnail_url_str"),
+            "image_url": asset.get("data"),
+            "asset_url": asset.get("data"),
+            "synthetic_prompt": prompt_echo,  # ✅ RAW user prompt or DEFAULT TEMPLATE
+            "scores": _normalize_scores_required(None),  # ✅ satisfy pydantic
+            "overall_preference_score": 0,
+            "feedback": _normalize_feedback(None),
+            "error": result["error"],
         }
 
-    scores = result.get("scores", {}) or {}
-    total_score = sum(scores.values()) if scores else 0
-    avg_score = (total_score / 5.0) if scores else 0
-    preference_pct = int(((avg_score - 1) / 6.0) * 100) if avg_score >= 1 else 0
+    scores = _normalize_scores_required(result.get("scores", None))
+    feedback = _normalize_feedback(result.get("feedback", None))
 
-    if preference_pct < 0:
+    vals = [v for v in scores.values() if isinstance(v, int) and 1 <= v <= 7]
+    if vals:
+        avg_score = sum(vals) / float(len(vals))
+        preference_pct = int(((avg_score - 1) / 6.0) * 100) if avg_score >= 1 else 0
+        preference_pct = max(0, min(100, preference_pct))
+    else:
+        avg_score = 0.0
         preference_pct = 0
-    if preference_pct > 100:
-        preference_pct = 100
+
+    logger.info(
+        f"[synthetic] analysis success via_url persona_id={persona_dict.get('id')} asset_id={asset.get('id')} "
+        f"avg_score={avg_score:.2f} preference_pct={preference_pct}"
+    )
 
     return {
         "persona_id": persona_dict["id"],
         "persona_name": persona_dict["name"],
         "asset_id": asset.get("id"),
-        "image_id":asset.get("id"),
-        "image_name":asset.get("name"),
-        "thumbnail_url":asset.get("thumbnail_url"),
-        "thumbnail_url_str":asset.get("thumbnail_url_str"),
+        "image_id": asset.get("id"),
+        "image_name": asset.get("name"),
+        "thumbnail_url": asset.get("thumbnail_url"),
+        "thumbnail_url_str": asset.get("thumbnail_url_str"),
         "image_url": asset.get("data"),
-        "asset_url":asset.get("data"),
+        "asset_url": asset.get("data"),
+        "synthetic_prompt": prompt_echo,  # ✅ RAW user prompt or DEFAULT TEMPLATE
         "scores": scores,
         "overall_preference_score": preference_pct,
-        "feedback": result.get("feedback", {}) or {}
+        "feedback": feedback,
     }
 
+
+# =========================================================
+# ------------------- RUNNER V1 ---------------------------
+# =========================================================
 
 def run_synthetic_testing(
     persona_ids: List[int],
     assets: List[Dict[str, Any]],
-    db = None
+    db=None,
+    synthetic_prompt: str = ""
 ) -> Dict[str, Any]:
     """
     Run synthetic testing for multiple assets and personas.
-    
-    Args:
-        persona_ids: List of persona IDs
-        assets: List of dicts {id: str, name: str, data: str|None, text: str}
+    assets: [{id, name, data(base64|None), text}]
     """
-    
-    # Fetch personas
+
+    logger.info(
+        f"[synthetic] run_synthetic_testing start persona_ids={persona_ids} assets_count={len(assets)} "
+        f"override_provided={not _is_blank(synthetic_prompt)}"
+    )
+
     try:
         personas = []
         for pid in persona_ids:
             p = crud.get_persona(db, pid)
             if p:
                 personas.append({
-                    'id': p.id,
-                    'name': p.name,
-                    'age': p.age,
-                    'gender': p.gender,
-                    'location': p.location,
-                    'condition': p.condition,
-                    'condition': p.condition,
-                    'full_persona': json.loads(p.full_persona_json) if getattr(p, 'full_persona_json', None) else {},
-                    'additional_context': p.additional_context or {}
+                    "id": p.id,
+                    "name": p.name,
+                    "age": p.age,
+                    "gender": p.gender,
+                    "location": p.location,
+                    "condition": p.condition,
+                    "full_persona": json.loads(p.full_persona_json) if getattr(p, "full_persona_json", None) else {},
+                    "additional_context": p.additional_context or {},
                 })
-                
+                logger.info(f"[synthetic] loaded persona pid={pid}")
+            else:
+                logger.warning(f"[synthetic] persona not found pid={pid}")
+
         if not personas:
+            logger.error("[synthetic] No valid personas found")
             return {"error": "No valid personas found"}
 
-        results = []
-        
-        # Process all combinations in parallel
+        results: List[Dict[str, Any]] = []
+
         with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
             futures = []
             for persona in personas:
                 for asset in assets:
-                    futures.append(
-                        executor.submit(analyze_single_asset_persona, persona, asset)
-                    )
-                    
+                    futures.append(executor.submit(analyze_single_asset_persona, persona, asset, synthetic_prompt))
+
+            logger.info(f"[synthetic] submitted tasks count={len(futures)}")
+
             for future in concurrent.futures.as_completed(futures):
                 try:
                     res = future.result()
                     results.append(res)
                 except Exception as e:
                     import traceback
-                    logger.error(f"Analysis task failed: {e}\n{traceback.format_exc()}")
+                    logger.error(f"[synthetic] Analysis task failed: {e}\n{traceback.format_exc()}")
 
-        # Aggregation
-        aggregated_results = {} # asset_id -> {metrics_avg, feedback_summary}
-        
+        logger.info(f"[synthetic] all tasks done results_count={len(results)}")
+
+        aggregated_results: Dict[str, Any] = {}
+
         for asset in assets:
-            a_id = asset['id']
-            asset_responses = [r for r in results if r.get('asset_id') == a_id and 'error' not in r]
-            
+            a_id = asset["id"]
+            asset_responses = [r for r in results if r.get("asset_id") == a_id and "error" not in r]
             if not asset_responses:
+                logger.warning(f"[synthetic] no successful responses for asset_id={a_id}")
                 continue
-                
-            # Calc averages
-            count = len(asset_responses)
-            avg_scores = {
+
+            sums = {
                 "motivation_to_prescribe": 0.0,
                 "connection_to_story": 0.0,
                 "differentiation": 0.0,
                 "believability": 0.0,
-                "stopping_power": 0.0
+                "stopping_power": 0.0,
             }
-            avg_pref = 0.0
-            
+            counts = {
+                "motivation_to_prescribe": 0,
+                "connection_to_story": 0,
+                "differentiation": 0,
+                "believability": 0,
+                "stopping_power": 0,
+            }
+
+            pref_sum = 0.0
+            pref_count = 0
+
             for r in asset_responses:
-                s = r.get('scores', {})
-                if not s: continue # Skip if scores missing
-                for k in avg_scores:
-                    avg_scores[k] += s.get(k, 0)
-                avg_pref += r.get('overall_preference_score', 0)
-                
-            for k in avg_scores:
-                avg_scores[k] = round(avg_scores[k] / count, 1) if count > 0 else 0
-            
+                s = r.get("scores", {}) or {}
+                if isinstance(s, dict):
+                    for k in sums.keys():
+                        v = s.get(k, 0)
+                        if isinstance(v, (int, float)) and 1 <= float(v) <= 7:
+                            sums[k] += float(v)
+                            counts[k] += 1
+
+                op = r.get("overall_preference_score", None)
+                if isinstance(op, (int, float)):
+                    pref_sum += float(op)
+                    pref_count += 1
+
+            avg_scores = {}
+            for k in sums.keys():
+                c = counts.get(k, 0)
+                avg_scores[k] = round(sums[k] / c, 1) if c > 0 else 0.0
+
             aggregated_results[a_id] = {
-                "asset_name": asset['name'],
+                "asset_name": asset.get("name"),
                 "average_scores": avg_scores,
-                "average_preference": int(avg_pref / count) if count > 0 else 0,
-                "respondent_count": count
+                "average_preference": int(pref_sum / pref_count) if pref_count > 0 else 0,
+                "respondent_count": len(asset_responses),
             }
+
+            logger.info(f"[synthetic] aggregated asset_id={a_id} respondent_count={len(asset_responses)}")
+
+        logger.info("[synthetic] run_synthetic_testing end")
+
+        top_prompt_echo = synthetic_prompt.strip() if not _is_blank(synthetic_prompt) else DEFAULT_SYNTHETIC_PROMPT_TEMPLATE
 
         return {
             "results": results,
@@ -408,121 +1302,155 @@ def run_synthetic_testing(
             "metadata": {
                 "personas_count": len(personas),
                 "assets_count": len(assets),
-                "timestamp": datetime.now().isoformat()
-            }
+                "timestamp": datetime.now().isoformat(),
+                "synthetic_prompt_provided": (not _is_blank(synthetic_prompt)),
+            },
+            "synthetic_prompt": top_prompt_echo,
         }
+
     except Exception as e:
         import traceback
-        logger.error(f"Global synthetic testing error: {e}\n{traceback.format_exc()}")
-        raise e
+        logger.error(f"[synthetic] Global synthetic testing error: {e}\n{traceback.format_exc()}")
+        raise
 
 
+# =========================================================
+# ------------------- RUNNER V2 (URL) ---------------------
+# =========================================================
 
 def run_synthetic_testingV2(
-    campaign_id:str,
-    task_id:str,
+    campaign_id: str,
+    task_id: str,
     persona_ids: List[int],
     assets: List[Dict[str, Any]],
-    db = None
+    synthetic_prompt: str = "",
+    db=None
 ) -> Dict[str, Any]:
     """
-    Run synthetic testing for multiple assets and personas.
-    
-    Args:
-        persona_ids: List of persona IDs
-        assets: List of dicts {id: str, name: str, data: str|None, text: str}
+    assets: [{id, name, data(url|None), text}]
     """
-    
-    # Fetch personas
+
+    logger.info(
+        f"[synthetic] run_synthetic_testingV2 start campaign_id={campaign_id} task_id={task_id} "
+        f"persona_ids={persona_ids} assets_count={len(assets)} override_provided={not _is_blank(synthetic_prompt)}"
+    )
+
     try:
         personas = []
         for pid in persona_ids:
             p = crud.get_persona(db, pid)
             if p:
                 personas.append({
-                    'id': p.id,
-                    'name': p.name,
-                    'age': p.age,
-                    'gender': p.gender,
-                    'location': p.location,
-                    'condition': p.condition,
-                    'condition': p.condition,
-                    'full_persona': json.loads(p.full_persona_json) if getattr(p, 'full_persona_json', None) else {},
-                    'additional_context': p.additional_context or {}
+                    "id": p.id,
+                    "name": p.name,
+                    "age": p.age,
+                    "gender": p.gender,
+                    "location": p.location,
+                    "condition": p.condition,
+                    "full_persona": json.loads(p.full_persona_json) if getattr(p, "full_persona_json", None) else {},
+                    "additional_context": p.additional_context or {},
                 })
-                
+                logger.info(f"[synthetic] loaded persona pid={pid}")
+            else:
+                logger.warning(f"[synthetic] persona not found pid={pid}")
+
         if not personas:
+            logger.error("[synthetic] No valid personas found (V2)")
             return {"error": "No valid personas found"}
 
-        results = []
-        
-        # Process all combinations in parallel
+        results: List[Dict[str, Any]] = []
+
         with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
             futures = []
             for persona in personas:
                 for asset in assets:
-                    futures.append(
-                        executor.submit(analyze_single_asset_persona_via_url, persona, asset)
-                    )
-                    
+                    futures.append(executor.submit(analyze_single_asset_persona_via_url, persona, asset, synthetic_prompt))
+
+            logger.info(f"[synthetic] submitted tasks (V2) count={len(futures)}")
+
             for future in concurrent.futures.as_completed(futures):
                 try:
                     res = future.result()
                     results.append(res)
                 except Exception as e:
                     import traceback
-                    logger.error(f"Analysis task failed: {e}\n{traceback.format_exc()}")
+                    logger.error(f"[synthetic] Analysis task failed (V2): {e}\n{traceback.format_exc()}")
 
-        # Aggregation
-        aggregated_results = {} # asset_id -> {metrics_avg, feedback_summary}
-        
+        logger.info(f"[synthetic] all tasks done (V2) results_count={len(results)}")
+
+        aggregated_results: Dict[str, Any] = {}
+
         for asset in assets:
-            a_id = asset['id']
-            asset_responses = [r for r in results if r.get('asset_id') == a_id and 'error' not in r]
-            
+            a_id = asset["id"]
+            asset_responses = [r for r in results if r.get("asset_id") == a_id and "error" not in r]
             if not asset_responses:
+                logger.warning(f"[synthetic] no successful responses (V2) for asset_id={a_id}")
                 continue
-                
-            # Calc averages
-            count = len(asset_responses)
-            avg_scores = {
+
+            sums = {
                 "motivation_to_prescribe": 0.0,
                 "connection_to_story": 0.0,
                 "differentiation": 0.0,
                 "believability": 0.0,
-                "stopping_power": 0.0
+                "stopping_power": 0.0,
             }
-            avg_pref = 0.0
-            
+            counts = {
+                "motivation_to_prescribe": 0,
+                "connection_to_story": 0,
+                "differentiation": 0,
+                "believability": 0,
+                "stopping_power": 0,
+            }
+
+            pref_sum = 0.0
+            pref_count = 0
+
             for r in asset_responses:
-                s = r.get('scores', {})
-                if not s: continue # Skip if scores missing
-                for k in avg_scores:
-                    avg_scores[k] += s.get(k, 0)
-                avg_pref += r.get('overall_preference_score', 0)
-                
-            for k in avg_scores:
-                avg_scores[k] = round(avg_scores[k] / count, 1) if count > 0 else 0
-            
+                s = r.get("scores", {}) or {}
+                if isinstance(s, dict):
+                    for k in sums.keys():
+                        v = s.get(k, 0)
+                        if isinstance(v, (int, float)) and 1 <= float(v) <= 7:
+                            sums[k] += float(v)
+                            counts[k] += 1
+
+                op = r.get("overall_preference_score", None)
+                if isinstance(op, (int, float)):
+                    pref_sum += float(op)
+                    pref_count += 1
+
+            avg_scores = {}
+            for k in sums.keys():
+                c = counts.get(k, 0)
+                avg_scores[k] = round(sums[k] / c, 1) if c > 0 else 0.0
+
             aggregated_results[a_id] = {
-                "asset_name": asset['name'],
+                "asset_name": asset.get("name"),
                 "average_scores": avg_scores,
-                "average_preference": int(avg_pref / count) if count > 0 else 0,
-                "respondent_count": count
+                "average_preference": int(pref_sum / pref_count) if pref_count > 0 else 0,
+                "respondent_count": len(asset_responses),
             }
+            logger.info(f"[synthetic] aggregated (V2) asset_id={a_id} respondent_count={len(asset_responses)}")
+
+        top_prompt_echo = synthetic_prompt.strip() if not _is_blank(synthetic_prompt) else DEFAULT_SYNTHETIC_PROMPT_TEMPLATE
+
+        logger.info("[synthetic] run_synthetic_testingV2 end")
 
         return {
             "results": results,
             "aggregated": aggregated_results,
             "metadata": {
-                "campaign_id":campaign_id,
-                "task_id":task_id,
+                "campaign_id": campaign_id,
+                "task_id": task_id,
                 "personas_count": len(personas),
                 "assets_count": len(assets),
-                "timestamp": datetime.now().isoformat()
-            }
+                "timestamp": datetime.now().isoformat(),
+                "override_provided": (not _is_blank(synthetic_prompt)),
+            },
+            "synthetic_prompt": top_prompt_echo,  # ✅ RAW user prompt OR DEFAULT TEMPLATE (unpopulated)
         }
+
     except Exception as e:
         import traceback
-        logger.error(f"Global synthetic testing error: {e}\n{traceback.format_exc()}")
-        raise e
+        logger.error(f"[synthetic] Global synthetic testing error (V2): {e}\n{traceback.format_exc()}")
+        raise

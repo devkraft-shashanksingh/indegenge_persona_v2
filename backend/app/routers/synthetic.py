@@ -97,7 +97,7 @@ async def synthetic_testing_analyze(
             "text": asset.text_content,
             "url_image_str":asset.image_url_str,
             "thumbnail_url":asset.thumbnail_url,
-            "thumbnail_url_str":asset.thumbnail_url_str
+            "thumbnail_url_str":asset.thumbnail_url_str,
         }
         for asset in request.assets
     ]
@@ -107,5 +107,6 @@ async def synthetic_testing_analyze(
         request.task_id,
         request.persona_ids,
         assets_data,
+        request.synthetic_prompt,
         db
     )

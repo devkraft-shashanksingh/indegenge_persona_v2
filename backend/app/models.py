@@ -1,5 +1,8 @@
 from sqlalchemy import Column, Integer, String, Text, DateTime, JSON, Float, ForeignKey, Boolean, Enum
 from sqlalchemy.sql import func
+from sqlalchemy.dialects.postgresql import UUID , JSONB
+from sqlalchemy.sql import func
+import uuid
 from .database import Base
 import datetime
 import enum
@@ -231,4 +234,37 @@ class ChatMessage(Base):
     thought_process = Column(Text, nullable=True)
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class TaskHistory(Base):
+    """Individual message in a chat session."""
+
+    __tablename__ = "task_history"
+
+    id = Column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        index=True
+    )
+
+    task_id = Column(
+        UUID(as_uuid=True),
+        nullable=False,
+        index=True
+    )
+
+    response_stored = Column(
+        JSON,
+        nullable=True
+    )
+
+    type_test = Column(Text)
+    status = Column(Text)
+
+    created_at = Column(
+        DateTime(timezone=True),   # ✅ TIMESTAMP WITH TIME ZONE
+        server_default=func.now(),
+        nullable=False
+    )
 

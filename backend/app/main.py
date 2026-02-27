@@ -7,7 +7,7 @@ import uvicorn
 import time
 
 from .core.config import settings
-from .routers import personas, brands, chat, synthetic, analysis, panel_feedback, simulations, utils
+from .routers import personas, brands, chat, synthetic, analysis, panel_feedback, simulations, utils,history
 from .database import get_db
 from . import models, segments, disease_packs, crud
 from sqlalchemy.orm import Session
@@ -69,6 +69,7 @@ api_router.include_router(analysis.router)
 api_router.include_router(panel_feedback.router)
 api_router.include_router(simulations.router)
 api_router.include_router(utils.router)
+api_router.include_router(history.router)
 
 @api_router.get("/")
 async def root():
