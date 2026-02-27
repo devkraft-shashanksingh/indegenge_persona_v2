@@ -157,16 +157,16 @@ Rules:
 - Title Case
 
 If type is 'qual':
-Create recommendation name for improving marketing images.
+Create recommendation name for improving marketing images using image descriptors so using that context a creative task name is given.
 
 If type is 'quant':
-Create mathematical recommendation name.
+Create mathematical recommendation name using image descriptors so using that context a creative task name is given.
 
 Image Descriptions:
 {payload.image_descriptors}
 
 Return ONLY JSON:
-{{"type_name":"Three Word Name"}}
+{{"task_name":"Three Word Name"}}
 """
 
             try:
@@ -178,8 +178,8 @@ Return ONLY JSON:
 
                 content = resp.choices[0].message.content
                 data = json.loads(content)
-
-                row.task_name = data.get("type_name")
+                print(data)
+                row.task_name = data.get("task_name")
 
             except Exception:
                 # simple fallback
