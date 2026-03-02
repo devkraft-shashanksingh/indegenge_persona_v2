@@ -2539,7 +2539,7 @@ def run_panel_feedback_analysis_v2(
     # EXECUTE PANEL CALLS
     # -------------------------------
     persona_cards = []
-    max_workers = min(5, len(jobs)) if jobs else 1
+    max_workers = 15 if jobs else 1
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {}
@@ -2647,7 +2647,7 @@ def run_panel_feedback_analysis_v2(
         # IMAGE SUMMARY
         # -------------------------------
         if generate_image_summaries:
-            with concurrent.futures.ThreadPoolExecutor(max_workers=min(5, max(1, len(images_list)))) as ex:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=15) as ex:
                 futs = {}
                 for img in images_list:
                     img_payload = [
