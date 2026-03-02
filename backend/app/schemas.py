@@ -418,6 +418,7 @@ class SyntheticAssetV2(BaseModel):
     image_url_str:str
     thumbnail_url: Optional[str] = None
     thumbnail_url_str: Optional[str] = None
+    image_descriptor: Optional[str] = None
 
 class SyntheticTestingRequestV2(BaseModel):
     campaign_id:str

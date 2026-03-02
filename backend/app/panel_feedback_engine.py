@@ -2472,12 +2472,6 @@ def run_panel_feedback_analysis_v2(
     if has_images and content_type not in ["image", "both"]:
         content_type = "both" if (stimulus_text and stimulus_text.strip()) else "image"
 
-    # ✅ NEW: generate 2–3 word descriptors for each image (pre-step)
-    if has_images:
-        try:
-            stimulus_images = generate_image_descriptors(stimulus_images)
-        except Exception as e:
-            logger.warning(f"⚠️ Image descriptor generation failed: {e}")
 
     # -------------------------------
     # BUILD JOBS (forced cartesian)
@@ -2539,7 +2533,7 @@ def run_panel_feedback_analysis_v2(
     # EXECUTE PANEL CALLS
     # -------------------------------
     persona_cards = []
-    max_workers = 15 if jobs else 1
+    max_workers = 20 if jobs else 1
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {}
@@ -2647,7 +2641,7 @@ def run_panel_feedback_analysis_v2(
         # IMAGE SUMMARY
         # -------------------------------
         if generate_image_summaries:
-            with concurrent.futures.ThreadPoolExecutor(max_workers=15) as ex:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=20) as ex:
                 futs = {}
                 for img in images_list:
                     img_payload = [
