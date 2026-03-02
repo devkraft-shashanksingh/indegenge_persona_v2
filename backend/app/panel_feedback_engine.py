@@ -2472,12 +2472,6 @@ def run_panel_feedback_analysis_v2(
     if has_images and content_type not in ["image", "both"]:
         content_type = "both" if (stimulus_text and stimulus_text.strip()) else "image"
 
-    # ✅ NEW: generate 2–3 word descriptors for each image (pre-step)
-    if has_images:
-        try:
-            stimulus_images = generate_image_descriptors(stimulus_images)
-        except Exception as e:
-            logger.warning(f"⚠️ Image descriptor generation failed: {e}")
 
     # -------------------------------
     # BUILD JOBS (forced cartesian)

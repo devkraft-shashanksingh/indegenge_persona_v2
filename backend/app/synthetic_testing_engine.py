@@ -2031,7 +2031,7 @@ def analyze_single_asset_persona_via_url(
                 "thumbnail_url_str": asset.get("thumbnail_url_str"),
                 "image_url": asset.get("data"),
                 "asset_url": asset.get("data"),
-                "image_descriptor": image_descriptor,  # ✅ NEW
+                "image_descriptor": asset.get("image_descriptor"),  # ✅ NEW
                 "synthetic_prompt": prompt_echo,
                 "scores": _normalize_scores_required(None),
                 "overall_preference_score": 0,
@@ -2079,7 +2079,7 @@ def analyze_single_asset_persona_via_url(
             "thumbnail_url_str": asset.get("thumbnail_url_str"),
             "image_url": asset.get("data"),
             "asset_url": asset.get("data"),
-            "image_descriptor": image_descriptor,  # ✅ NEW
+            "image_descriptor": asset.get("image_descriptor"),  # ✅ NEW
             "synthetic_prompt": prompt_echo,
             "scores": _normalize_scores_required(None),
             "overall_preference_score": 0,
@@ -2108,7 +2108,7 @@ def analyze_single_asset_persona_via_url(
         "thumbnail_url_str": asset.get("thumbnail_url_str"),
         "image_url": asset.get("data"),
         "asset_url": asset.get("data"),
-        "image_descriptor": image_descriptor,  # ✅ NEW
+        "image_descriptor": asset.get("image_descriptor"),  # ✅ NEW
         "synthetic_prompt": prompt_echo,
         "scores": scores,
         "overall_preference_score": preference_pct,
@@ -2138,6 +2138,9 @@ def run_synthetic_testingV2(
         f"persona_ids={persona_ids} assets_count={len(assets)} override_provided={not _is_blank(synthetic_prompt)}"
     )
 
+
+    logger.info(assets)
+    logger.info("✅✅✅✅✅✅✅✅✅")
     try:
         personas = []
         for pid in persona_ids:
@@ -2162,10 +2165,7 @@ def run_synthetic_testingV2(
             return {"error": "No valid personas found"}
 
         # ✅ NEW: pre-label asset images (2–3 words) using asset['data'] URL
-        try:
-            assets = generate_asset_image_descriptors_via_url(assets)
-        except Exception as e:
-            logger.warning(f"[synthetic] asset descriptor generation failed: {e}")
+        
 
         results: List[Dict[str, Any]] = []
 

@@ -98,6 +98,7 @@ async def synthetic_testing_analyze(
             "url_image_str":asset.image_url_str,
             "thumbnail_url":asset.thumbnail_url,
             "thumbnail_url_str":asset.thumbnail_url_str,
+            "image_descriptor":asset.image_descriptor
         }
         for asset in request.assets
     ]
