@@ -2169,7 +2169,7 @@ def run_synthetic_testingV2(
 
         results: List[Dict[str, Any]] = []
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=15) as executor:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
             futures = []
             for persona in personas:
                 for asset in assets:
