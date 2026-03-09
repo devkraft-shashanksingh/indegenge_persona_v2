@@ -29,6 +29,9 @@ class TaskHistoryUpsertRequest(BaseModel):
 
 
 
+class DeleteTaskHistoryRequest(BaseModel):
+    task_id: str
+
 # =========================================================
 # 1) GET: List task_ids (limit/offset + optional type_test filter)
 # =========================================================
@@ -48,6 +51,9 @@ def list_task_ids(
         # optional filter
         if type_test:
             q = q.filter(models.TaskHistory.type_test == type_test)
+        
+        q = q.filter(models.TaskHistory.status == "success")
+
 
         total = q.count()
 
@@ -213,3 +219,33 @@ Return ONLY JSON:
         db.rollback()
         logger.exception("Failed to upsert task history")
         raise HTTPException(status_code=500, detail=f"Upsert failed: {str(e)}")
+    
+
+
+@router.put("/delete")
+def delete_task_history(
+    payload: DeleteTaskHistoryRequest,
+    db: Session = Depends(get_db)
+):
+    task_history = (
+        db.query(models.TaskHistory)
+        .filter(models.TaskHistory.task_id == payload.task_id)
+        .first()
+    )
+
+    if not task_history:
+        raise HTTPException(status_code=404, detail="Task history not found")
+
+    task_history.status = "deleted"
+
+    db.commit()
+    db.refresh(task_history)
+
+    return {
+        "message": "Task history marked as deleted successfully",
+        "data": {
+            "id": task_history.id,
+            "task_id": task_history.task_id,
+            "status": task_history.status,
+        }
+    }
