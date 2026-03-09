@@ -448,14 +448,14 @@ class SyntheticImageResultV2(BaseModel):
     thumbnail_url: Optional[str] = None
     thumbnail_url_str:Optional[str] = None
     scores: Optional[AssetScores] = None
-    overall_preference_score: Optional[int] = None
+    overall_preference_score: Optional[float] = None
     feedback: Optional[QualitativeFeedback] = None
     error: Optional[str] = None
 
 class SyntheticAggregatedItemV2(BaseModel):
     asset_name: str
     average_scores: Dict[str, float]
-    average_preference: int
+    average_preference: float
     respondent_count: int
 
 
