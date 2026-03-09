@@ -319,11 +319,11 @@ class SyntheticTestingRequest(BaseModel):
     assets: List[SyntheticAsset]
 
 class AssetScores(BaseModel):
-    motivation_to_prescribe: int
-    connection_to_story: int
-    differentiation: int
-    believability: int
-    stopping_power: int
+    motivation_to_prescribe: float
+    connection_to_story: float
+    differentiation: float
+    believability: float
+    stopping_power: float
 
 class QualitativeFeedback(BaseModel):
     does_well: List[str]

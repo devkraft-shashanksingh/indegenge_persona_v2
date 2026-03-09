@@ -1455,8 +1455,6 @@
 #         logger.error(f"[synthetic] Global synthetic testing error (V2): {e}\n{traceback.format_exc()}")
 #         raise
 
-
-
 import os
 import json
 import logging
@@ -1493,14 +1491,14 @@ DEFAULT_SYNTHETIC_PROMPT_TEMPLATE = """
 # {content_desc}
 
 **TASK:**
-Evaluate this asset objectively on a 1-7 scale (1 = Poor/Low, 7 = Excellent/High) and provide specific qualitative feedback.Give score with 1 decimal point too
+Evaluate this asset objectively on a 1.0-7.0 scale (1.0 = Poor/Low, 7.0 = Excellent/High) and provide specific qualitative feedback. Give score with 1 decimal point too.
 
 **GUIDELINES FOR FEEDBACK:**
 - **BE CONCISE**: Use short, punchy bullet points (maximum 15 words per bullet).
 - **BE DIRECT**: Go straight to the point. No fluff.
 - **AVOID MARKETER ARGOT**: Speak as the patient/HCP would naturally but clearly.
 
-**METRICS TO SCORE (1-7):**
+**METRICS TO SCORE (1.0-7.0):**
 1. **Motivation to Prescribe** (or "Ask for" if patient): How strongly does this motivate action?
 2. **Connection to Story**: Does the narrative/visual connect with your reality?
 3. **Differentiation**: Is this unique compared to other treatments?
@@ -1515,11 +1513,11 @@ Evaluate this asset objectively on a 1-7 scale (1 = Poor/Low, 7 = Excellent/High
 **OUTPUT JSON FORMAT:**
 {
   "scores": {
-    "motivation_to_prescribe": <1-7 int>,
-    "connection_to_story": <1-7 int>,
-    "differentiation": <1-7 int>,
-    "believability": <1-7 int>,
-    "stopping_power": <1-7 int>
+    "motivation_to_prescribe": <1-7 float>,
+    "connection_to_story": <1-7 float>,
+    "differentiation": <1-7 float>,
+    "believability": <1-7 float>,
+    "stopping_power": <1-7 float>
   },
   "feedback": {
     "does_well": ["<concise bullet 1>", "<concise bullet 2>"],
@@ -1667,7 +1665,9 @@ def _chat_json_synthetic(
             messages[-1]["content"] = [{"type": "text", "text": str(content) + enforce}]
 
     try:
-        logger.info(f"[synthetic] OpenAI call start model={MODEL_NAME} max_completion_tokens={max_completion_tokens}")
+        logger.info(
+            f"[synthetic] OpenAI call start model={MODEL_NAME} max_completion_tokens={max_completion_tokens}"
+        )
         response = client.chat.completions.create(
             model=MODEL_NAME,
             messages=messages,
@@ -1686,7 +1686,7 @@ def _chat_json_synthetic(
 
 
 # =========================================================
-# -------- NEW: ASSET IMAGE DESCRIPTORS (URL-BASED) --------
+# -------- NEW: ASSET IMAGE DESCRIPTORS (URL-BASED) -------
 # =========================================================
 
 ASSET_DESCRIPTOR_PROMPT = (
@@ -1707,6 +1707,7 @@ ASSET_DESCRIPTOR_PROMPT = (
     "}\n"
 )
 
+
 def _attach_asset_urls_to_parts(parts: List[Dict[str, Any]], assets: List[Dict[str, Any]]) -> None:
     """
     Attach asset images (url) to multimodal parts.
@@ -1721,6 +1722,7 @@ def _attach_asset_urls_to_parts(parts: List[Dict[str, Any]], assets: List[Dict[s
         url = a.get("data")  # V2: url stored in data
         if isinstance(url, str) and url.strip():
             parts.append({"type": "image_url", "image_url": {"url": url.strip()}})
+
 
 def generate_asset_image_descriptors_via_url(
     assets: List[Dict[str, Any]],
@@ -1772,39 +1774,48 @@ def generate_asset_image_descriptors_via_url(
 # ------------------- SCORE NORMALIZATION -----------------
 # =========================================================
 
-def _to_int_1_7(x: Any) -> int:
+def _to_float_1_7(x: Any) -> float:
+    """
+    Keeps score as float with 1 decimal place.
+    Valid range: 1.0 to 7.0
+    Invalid/missing => 0.0
+    """
     try:
         if isinstance(x, bool):
-            return 0
+            return 0.0
+
         if isinstance(x, (int, float)):
-            v = int(round(float(x)))
+            v = round(float(x), 1)
         elif isinstance(x, str):
-            v = int(round(float(x.strip())))
+            v = round(float(x.strip()), 1)
         else:
-            return 0
-        if v < 1:
-            return 1
-        if v > 7:
-            return 7
-        return v
+            return 0.0
+
+        if v < 1.0:
+            return 1.0
+        if v > 7.0:
+            return 7.0
+
+        return round(v, 1)
     except Exception:
-        return 0
+        return 0.0
 
 
-def _normalize_scores_required(scores: Any) -> Dict[str, int]:
+def _normalize_scores_required(scores: Any) -> Dict[str, float]:
     """
     Ensures API response always includes the 5 required score fields.
-    Missing/invalid => 0
+    Missing/invalid => 0.0
+    Keeps 1 decimal place.
     """
     if not isinstance(scores, dict):
         scores = {}
 
     return {
-        "motivation_to_prescribe": _to_int_1_7(scores.get("motivation_to_prescribe")),
-        "connection_to_story": _to_int_1_7(scores.get("connection_to_story")),
-        "differentiation": _to_int_1_7(scores.get("differentiation")),
-        "believability": _to_int_1_7(scores.get("believability")),
-        "stopping_power": _to_int_1_7(scores.get("stopping_power")),
+        "motivation_to_prescribe": _to_float_1_7(scores.get("motivation_to_prescribe")),
+        "connection_to_story": _to_float_1_7(scores.get("connection_to_story")),
+        "differentiation": _to_float_1_7(scores.get("differentiation")),
+        "believability": _to_float_1_7(scores.get("believability")),
+        "stopping_power": _to_float_1_7(scores.get("stopping_power")),
     }
 
 
@@ -1860,7 +1871,7 @@ def _build_synthetic_vars_map(
     asset_name: str,
     stimulus_text: str,
     has_image: bool,
-    image_descriptor: Optional[str] = None,   # ✅ NEW
+    image_descriptor: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Locked variables ONLY.
@@ -1875,35 +1886,25 @@ def _build_synthetic_vars_map(
 
     content_desc = f"Message: {stimulus_quoted}" if (stimulus_text or "").strip() else 'Message: ""'
     if has_image:
-        # ✅ NEW: include descriptor if present
         if isinstance(image_descriptor, str) and image_descriptor.strip():
             content_desc += f"\n(See attached image: {image_descriptor.strip()})"
         else:
             content_desc += "\n(See attached image)"
 
     locked_map = {
-        # persona basics
         "persona_id": persona.get("id"),
         "persona_name": persona.get("name"),
         "persona_age": persona.get("age"),
         "persona_gender": persona.get("gender"),
         "persona_location": persona.get("location"),
-
-        # persona derived
         "role": role,
         "segment": segment,
-
-        # asset
         "asset_name": asset_name,
         "stimulus_text": stimulus_text or "",
         "stimulus_text_quoted": stimulus_quoted,
         "has_image": has_image,
         "content_desc": content_desc,
-
-        # ✅ NEW: expose descriptor to prompt templates
         "image_descriptor": (image_descriptor or ""),
-
-        # pretty JSON blocks (string)
         "core_bio_pretty": _pretty_json(full_persona.get("core", {})),
         "full_persona_pretty": _pretty_json(full_persona),
         "additional_context_pretty": _pretty_json(persona.get("additional_context", {})),
@@ -1917,31 +1918,37 @@ def create_synthetic_prompt_pair(
     stimulus_text: str,
     has_image: bool,
     synthetic_prompt: str = "",
-    image_descriptor: Optional[str] = None,   # ✅ NEW
+    image_descriptor: Optional[str] = None,
 ) -> Tuple[str, str]:
     """
     Returns:
       prompt_used_for_model: rendered with locked vars (default or override)
       prompt_echo_for_api:   raw override OR default template (unpopulated)
     """
-    vars_map = _build_synthetic_vars_map(persona, asset_name, stimulus_text, has_image, image_descriptor=image_descriptor)
+    vars_map = _build_synthetic_vars_map(
+        persona,
+        asset_name,
+        stimulus_text,
+        has_image,
+        image_descriptor=image_descriptor,
+    )
     override_used = not _is_blank(synthetic_prompt)
 
     logger.info(
         f"[synthetic] create_synthetic_prompt_pair persona_id={vars_map.get('persona_id')} "
-        f"asset_name={asset_name} has_image={has_image} override_used={override_used} image_descriptor={image_descriptor}"
+        f"asset_name={asset_name} has_image={has_image} override_used={override_used} "
+        f"image_descriptor={image_descriptor}"
     )
 
     if override_used:
         prompt_used = _safe_format_map(synthetic_prompt, vars_map).strip()
-        prompt_echo = synthetic_prompt.strip()  # ✅ RAW user prompt (unrendered)
+        prompt_echo = synthetic_prompt.strip()
         logger.info(
             f"[synthetic] override prompt rendered for model. locked_keys={len(vars_map)} "
             f"prompt_used_len={len(prompt_used)} preview={_safe_prompt_preview(prompt_used)}"
         )
         return prompt_used, prompt_echo
 
-    # default: render for model, echo template for API (UNPOPULATED)
     prompt_used = _safe_format_map(DEFAULT_SYNTHETIC_PROMPT_TEMPLATE, vars_map).strip()
     prompt_echo = DEFAULT_SYNTHETIC_PROMPT_TEMPLATE
     logger.info(
@@ -1971,7 +1978,8 @@ def image_url_to_base64(url: str, timeout: int = 20) -> Dict[str, Optional[str]]
     b64 = base64.b64encode(r.content).decode("utf-8")
 
     logger.info(
-        f"[synthetic] image_url_to_base64 success content_type={content_type} mime={mime} bytes={len(r.content)} b64_len={len(b64)}"
+        f"[synthetic] image_url_to_base64 success content_type={content_type} "
+        f"mime={mime} bytes={len(r.content)} b64_len={len(b64)}"
     )
     return {"base64": b64, "mime": mime}
 
@@ -1989,13 +1997,12 @@ def analyze_single_asset_persona_via_url(
 
     asset_name = asset.get("name", "Unnamed Asset")
     text_content = asset.get("text", "")
-
-    # ✅ NEW: consume descriptor (generated in runner)
     image_descriptor = asset.get("image_descriptor")
 
     logger.info(
         f"[synthetic] analyze_single_asset_persona_via_url start persona_id={persona_dict.get('id')} "
-        f"asset_id={asset.get('id')} override_provided={not _is_blank(synthetic_prompt)} image_descriptor={image_descriptor}"
+        f"asset_id={asset.get('id')} override_provided={not _is_blank(synthetic_prompt)} "
+        f"image_descriptor={image_descriptor}"
     )
 
     image_data = None
@@ -2008,7 +2015,10 @@ def analyze_single_asset_persona_via_url(
             out = image_url_to_base64(asset_url)
             image_data = out["base64"]
             mime = out["mime"] or "image/png"
-            logger.info(f"[synthetic] image fetched+encoded asset_id={asset.get('id')} mime={mime} b64_len={len(image_data)}")
+            logger.info(
+                f"[synthetic] image fetched+encoded asset_id={asset.get('id')} "
+                f"mime={mime} b64_len={len(image_data)}"
+            )
         except Exception as e:
             logger.error(f"[synthetic] image fetch failed asset_id={asset.get('id')} err={e}")
 
@@ -2018,7 +2028,7 @@ def analyze_single_asset_persona_via_url(
                 text_content,
                 has_image=False,
                 synthetic_prompt=synthetic_prompt,
-                image_descriptor=image_descriptor,  # ✅ pass through
+                image_descriptor=image_descriptor,
             )
 
             return {
@@ -2031,7 +2041,7 @@ def analyze_single_asset_persona_via_url(
                 "thumbnail_url_str": asset.get("thumbnail_url_str"),
                 "image_url": asset.get("data"),
                 "asset_url": asset.get("data"),
-                "image_descriptor": asset.get("image_descriptor"),  # ✅ NEW
+                "image_descriptor": asset.get("image_descriptor"),
                 "synthetic_prompt": prompt_echo,
                 "scores": _normalize_scores_required(None),
                 "overall_preference_score": 0,
@@ -2045,12 +2055,13 @@ def analyze_single_asset_persona_via_url(
         text_content,
         has_image=bool(image_data),
         synthetic_prompt=synthetic_prompt,
-        image_descriptor=image_descriptor,  # ✅ pass through
+        image_descriptor=image_descriptor,
     )
 
     logger.info(
         f"[synthetic] prompt selected via_url persona_id={persona_dict.get('id')} asset_id={asset.get('id')} "
-        f"echo_is_default={_is_blank(synthetic_prompt)} prompt_used_len={len(prompt_used)} prompt_echo_len={len(prompt_echo)}"
+        f"echo_is_default={_is_blank(synthetic_prompt)} prompt_used_len={len(prompt_used)} "
+        f"prompt_echo_len={len(prompt_echo)}"
     )
 
     messages = [{"role": "user", "content": [{"type": "text", "text": prompt_used}]}]
@@ -2061,13 +2072,20 @@ def analyze_single_asset_persona_via_url(
             "image_url": {"url": f"data:{mime};base64,{image_data}"},
         })
 
-    logger.info(f"[synthetic] OpenAI analyze start via_url persona_id={persona_dict.get('id')} asset_id={asset.get('id')}")
+    logger.info(
+        f"[synthetic] OpenAI analyze start via_url persona_id={persona_dict.get('id')} "
+        f"asset_id={asset.get('id')}"
+    )
     result = _chat_json_synthetic(messages)
-    logger.info(f"[synthetic] OpenAI analyze end via_url persona_id={persona_dict.get('id')} asset_id={asset.get('id')}")
+    logger.info(
+        f"[synthetic] OpenAI analyze end via_url persona_id={persona_dict.get('id')} "
+        f"asset_id={asset.get('id')}"
+    )
 
     if "error" in result:
         logger.error(
-            f"[synthetic] analysis failed via_url persona_id={persona_dict.get('id')} asset_id={asset.get('id')} err={result.get('error')}"
+            f"[synthetic] analysis failed via_url persona_id={persona_dict.get('id')} "
+            f"asset_id={asset.get('id')} err={result.get('error')}"
         )
         return {
             "persona_id": persona_dict["id"],
@@ -2079,7 +2097,7 @@ def analyze_single_asset_persona_via_url(
             "thumbnail_url_str": asset.get("thumbnail_url_str"),
             "image_url": asset.get("data"),
             "asset_url": asset.get("data"),
-            "image_descriptor": asset.get("image_descriptor"),  # ✅ NEW
+            "image_descriptor": asset.get("image_descriptor"),
             "synthetic_prompt": prompt_echo,
             "scores": _normalize_scores_required(None),
             "overall_preference_score": 0,
@@ -2090,10 +2108,10 @@ def analyze_single_asset_persona_via_url(
     scores = _normalize_scores_required(result.get("scores", None))
     feedback = _normalize_feedback(result.get("feedback", None))
 
-    vals = [v for v in scores.values() if isinstance(v, int) and 1 <= v <= 7]
+    vals = [v for v in scores.values() if isinstance(v, (int, float)) and 1.0 <= float(v) <= 7.0]
     if vals:
         avg_score = sum(vals) / float(len(vals))
-        preference_pct = int(((avg_score - 1) / 6.0) * 100) if avg_score >= 1 else 0
+        preference_pct = int(((avg_score - 1.0) / 6.0) * 100) if avg_score >= 1.0 else 0
         preference_pct = max(0, min(100, preference_pct))
     else:
         preference_pct = 0
@@ -2108,7 +2126,7 @@ def analyze_single_asset_persona_via_url(
         "thumbnail_url_str": asset.get("thumbnail_url_str"),
         "image_url": asset.get("data"),
         "asset_url": asset.get("data"),
-        "image_descriptor": asset.get("image_descriptor"),  # ✅ NEW
+        "image_descriptor": asset.get("image_descriptor"),
         "synthetic_prompt": prompt_echo,
         "scores": scores,
         "overall_preference_score": preference_pct,
@@ -2130,17 +2148,18 @@ def run_synthetic_testingV2(
 ) -> Dict[str, Any]:
     """
     assets: [{id, name, data(url|None), text}]
-    ✅ NEW: adds assets[i]["image_descriptor"] using one batched LLM call before analysis
+    adds assets[i]["image_descriptor"] using one batched LLM call before analysis
     """
 
     logger.info(
         f"[synthetic] run_synthetic_testingV2 start campaign_id={campaign_id} task_id={task_id} "
-        f"persona_ids={persona_ids} assets_count={len(assets)} override_provided={not _is_blank(synthetic_prompt)}"
+        f"persona_ids={persona_ids} assets_count={len(assets)} "
+        f"override_provided={not _is_blank(synthetic_prompt)}"
     )
-
 
     logger.info(assets)
     logger.info("✅✅✅✅✅✅✅✅✅")
+
     try:
         personas = []
         for pid in persona_ids:
@@ -2153,7 +2172,9 @@ def run_synthetic_testingV2(
                     "gender": p.gender,
                     "location": p.location,
                     "condition": p.condition,
-                    "full_persona": json.loads(p.full_persona_json) if getattr(p, "full_persona_json", None) else {},
+                    "full_persona": json.loads(p.full_persona_json)
+                    if getattr(p, "full_persona_json", None)
+                    else {},
                     "additional_context": p.additional_context or {},
                 })
                 logger.info(f"[synthetic] loaded persona pid={pid}")
@@ -2164,8 +2185,15 @@ def run_synthetic_testingV2(
             logger.error("[synthetic] No valid personas found (V2)")
             return {"error": "No valid personas found"}
 
-        # ✅ NEW: pre-label asset images (2–3 words) using asset['data'] URL
-        
+        # Pre-label asset images once before per-persona analysis
+        try:
+            assets = generate_asset_image_descriptors_via_url(assets)
+            logger.info("[synthetic] asset descriptors generated successfully")
+        except Exception as e:
+            logger.warning(f"[synthetic] asset descriptor generation failed, continuing. err={e}")
+            for i, asset in enumerate(assets):
+                if isinstance(asset, dict) and "image_descriptor" not in asset:
+                    asset["image_descriptor"] = f"Asset {i+1}"
 
         results: List[Dict[str, Any]] = []
 
@@ -2173,7 +2201,14 @@ def run_synthetic_testingV2(
             futures = []
             for persona in personas:
                 for asset in assets:
-                    futures.append(executor.submit(analyze_single_asset_persona_via_url, persona, asset, synthetic_prompt))
+                    futures.append(
+                        executor.submit(
+                            analyze_single_asset_persona_via_url,
+                            persona,
+                            asset,
+                            synthetic_prompt,
+                        )
+                    )
 
             logger.info(f"[synthetic] submitted tasks (V2) count={len(futures)}")
 
@@ -2219,7 +2254,7 @@ def run_synthetic_testingV2(
                 if isinstance(s, dict):
                     for k in sums.keys():
                         v = s.get(k, 0)
-                        if isinstance(v, (int, float)) and 1 <= float(v) <= 7:
+                        if isinstance(v, (int, float)) and 1.0 <= float(v) <= 7.0:
                             sums[k] += float(v)
                             counts[k] += 1
 
@@ -2235,14 +2270,20 @@ def run_synthetic_testingV2(
 
             aggregated_results[a_id] = {
                 "asset_name": asset.get("name"),
-                "image_descriptor": asset.get("image_descriptor"),  # ✅ NEW (helpful in UI)
+                "image_descriptor": asset.get("image_descriptor"),
                 "average_scores": avg_scores,
-                "average_preference": int(pref_sum / pref_count) if pref_count > 0 else 0,
+                "average_preference": round(pref_sum / pref_count, 1) if pref_count > 0 else 0.0,
                 "respondent_count": len(asset_responses),
             }
-            logger.info(f"[synthetic] aggregated (V2) asset_id={a_id} respondent_count={len(asset_responses)}")
+            logger.info(
+                f"[synthetic] aggregated (V2) asset_id={a_id} respondent_count={len(asset_responses)}"
+            )
 
-        top_prompt_echo = synthetic_prompt.strip() if not _is_blank(synthetic_prompt) else DEFAULT_SYNTHETIC_PROMPT_TEMPLATE
+        top_prompt_echo = (
+            synthetic_prompt.strip()
+            if not _is_blank(synthetic_prompt)
+            else DEFAULT_SYNTHETIC_PROMPT_TEMPLATE
+        )
 
         logger.info("[synthetic] run_synthetic_testingV2 end")
 
@@ -2256,7 +2297,7 @@ def run_synthetic_testingV2(
                 "assets_count": len(assets),
                 "timestamp": datetime.now().isoformat(),
             },
-            "synthetic_prompt": top_prompt_echo,  # ✅ RAW user prompt OR DEFAULT TEMPLATE (unpopulated)
+            "synthetic_prompt": top_prompt_echo,
         }
 
     except Exception as e:
