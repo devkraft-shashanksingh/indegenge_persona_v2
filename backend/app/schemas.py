@@ -335,14 +335,14 @@ class SyntheticResultItem(BaseModel):
     persona_name: str
     asset_id: str
     scores: Optional[AssetScores] = None
-    overall_preference_score: Optional[int] = None
+    overall_preference_score: Optional[float] = None
     feedback: Optional[QualitativeFeedback] = None
     error: Optional[str] = None
 
 class AggregatedAssetResult(BaseModel):
     asset_name: str
     average_scores: Dict[str, float]
-    average_preference: int
+    average_preference: float
     respondent_count: int
 
 class SyntheticTestingResponse(BaseModel):
