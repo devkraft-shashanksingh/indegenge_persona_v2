@@ -1493,7 +1493,7 @@ DEFAULT_SYNTHETIC_PROMPT_TEMPLATE = """
 # {content_desc}
 
 **TASK:**
-Evaluate this asset objectively on a 1-7 scale (1 = Poor/Low, 7 = Excellent/High) and provide specific qualitative feedback.
+Evaluate this asset objectively on a 1-7 scale (1 = Poor/Low, 7 = Excellent/High) and provide specific qualitative feedback.Give score with 1 decimal point too
 
 **GUIDELINES FOR FEEDBACK:**
 - **BE CONCISE**: Use short, punchy bullet points (maximum 15 words per bullet).
