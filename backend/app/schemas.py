@@ -319,11 +319,11 @@ class SyntheticTestingRequest(BaseModel):
     assets: List[SyntheticAsset]
 
 class AssetScores(BaseModel):
-    motivation_to_prescribe: float
-    connection_to_story: float
-    differentiation: float
-    believability: float
-    stopping_power: float
+    motivation_to_prescribe: int
+    connection_to_story: int
+    differentiation: int
+    believability: int
+    stopping_power: int
 
 class QualitativeFeedback(BaseModel):
     does_well: List[str]
@@ -335,14 +335,14 @@ class SyntheticResultItem(BaseModel):
     persona_name: str
     asset_id: str
     scores: Optional[AssetScores] = None
-    overall_preference_score: Optional[float] = None
+    overall_preference_score: Optional[int] = None
     feedback: Optional[QualitativeFeedback] = None
     error: Optional[str] = None
 
 class AggregatedAssetResult(BaseModel):
     asset_name: str
     average_scores: Dict[str, float]
-    average_preference: float
+    average_preference: int
     respondent_count: int
 
 class SyntheticTestingResponse(BaseModel):
@@ -448,14 +448,14 @@ class SyntheticImageResultV2(BaseModel):
     thumbnail_url: Optional[str] = None
     thumbnail_url_str:Optional[str] = None
     scores: Optional[AssetScores] = None
-    overall_preference_score: Optional[float] = None
+    overall_preference_score: Optional[int] = None
     feedback: Optional[QualitativeFeedback] = None
     error: Optional[str] = None
 
 class SyntheticAggregatedItemV2(BaseModel):
     asset_name: str
     average_scores: Dict[str, float]
-    average_preference: float
+    average_preference: int
     respondent_count: int
 
 
