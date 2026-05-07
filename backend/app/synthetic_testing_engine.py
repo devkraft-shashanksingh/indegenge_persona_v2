@@ -1491,7 +1491,7 @@ DEFAULT_SYNTHETIC_PROMPT_TEMPLATE = """
 # {content_desc}
 
 **TASK:**
-Evaluate this asset objectively on a 1.0-7.0 scale (1.0 = Poor/Low, 7.0 = Excellent/High) and provide specific qualitative feedback. Give score with 1 decimal point too.
+Evaluate this asset objectively on a 1.0-7.0 scale (1.0 = Poor/Low, 7.0 = Excellent/High) and provide specific qualitative feedback. Give score with 1 decimal point too. For each score, provide a brief rationale (1-2 sentances) explaining why you gave that specific score.
 
 **GUIDELINES FOR FEEDBACK:**
 - **BE CONCISE**: Use short, punchy bullet points (maximum 15 words per bullet).
@@ -1518,6 +1518,13 @@ Evaluate this asset objectively on a 1.0-7.0 scale (1.0 = Poor/Low, 7.0 = Excell
     "differentiation": <1-7 float>,
     "believability": <1-7 float>,
     "stopping_power": <1-7 float>
+  },
+  "score_rationale": {
+    "motivation_to_prescribe": "<1-2 sentence rationale for this score>",
+    "connection_to_story": "<1-2 sentence rationale for this score>",
+    "differentiation": "<1-2 sentence rationale for this score>",
+    "believability": "<1-2 sentence rationale for this score>",
+    "stopping_power": "<1-2 sentence rationale for this score>"
   },
   "feedback": {
     "does_well": ["<concise bullet 1>", "<concise bullet 2>"],
@@ -1862,6 +1869,106 @@ def _normalize_feedback(feedback: Any) -> Dict[str, List[str]]:
     }
 
 
+def _normalize_score_rationale(rationale: Any) -> Dict[str, str]:
+    """
+    Ensures score_rationale has all 5 required fields as strings.
+    Missing/invalid => empty string.
+    """
+    if not isinstance(rationale, dict):
+        rationale = {}
+
+    required_keys = [
+        "motivation_to_prescribe",
+        "connection_to_story",
+        "differentiation",
+        "believability",
+        "stopping_power",
+    ]
+    result = {}
+    for key in required_keys:
+        val = rationale.get(key, "")
+        result[key] = str(val).strip() if val else ""
+    return result
+
+
+def _synthesize_average_rationale(
+    asset_name: str,
+    avg_scores: Dict[str, float],
+    individual_rationales: List[Dict[str, str]],
+) -> Dict[str, str]:
+    """
+    Uses LLM to synthesize individual persona rationales into a single
+    combined rationale per metric for the aggregated result.
+    Returns dict with 5 metric keys -> combined rationale string.
+    Falls back to empty strings on error.
+    """
+    metrics = [
+        "motivation_to_prescribe",
+        "connection_to_story",
+        "differentiation",
+        "believability",
+        "stopping_power",
+    ]
+
+    # Build per-metric input for the LLM
+    metric_inputs = {}
+    for m in metrics:
+        persona_texts = []
+        for i, r in enumerate(individual_rationales, 1):
+            text = r.get(m, "").strip()
+            if text:
+                persona_texts.append(f"  Persona {i}: {text}")
+        metric_inputs[m] = {
+            "average_score": avg_scores.get(m, 0.0),
+            "individual_rationales": persona_texts,
+        }
+
+    prompt = f"""You are synthesizing feedback from {len(individual_rationales)} healthcare professionals who evaluated a pharmaceutical marketing asset named "{asset_name}".
+
+For each metric below, you are given the average score and the individual rationales from each persona. Write ONE concise combined rationale (2-3 sentences) that captures the consensus view. Do NOT just list each persona's opinion — synthesize the common themes, agreements, and key tensions into a unified summary.
+
+"""
+    for m in metrics:
+        info = metric_inputs[m]
+        prompt += f"**{m}** (average: {info['average_score']}):\n"
+        if info["individual_rationales"]:
+            prompt += "\n".join(info["individual_rationales"]) + "\n\n"
+        else:
+            prompt += "  No rationales provided.\n\n"
+
+    prompt += """Return ONLY valid JSON in this format:
+{
+  "average_rationale": {
+    "motivation_to_prescribe": "<combined 2-3 sentence rationale>",
+    "connection_to_story": "<combined 2-3 sentence rationale>",
+    "differentiation": "<combined 2-3 sentence rationale>",
+    "believability": "<combined 2-3 sentence rationale>",
+    "stopping_power": "<combined 2-3 sentence rationale>"
+  }
+}"""
+
+    messages = [{"role": "user", "content": [{"type": "text", "text": prompt}]}]
+
+    try:
+        logger.info(f"[synthetic] synthesizing average_rationale for asset={asset_name}")
+        result = _chat_json_synthetic(messages, max_completion_tokens=1024)
+
+        if "error" in result:
+            logger.error(f"[synthetic] average_rationale synthesis failed: {result['error']}")
+            return {m: "" for m in metrics}
+
+        avg_rat = result.get("average_rationale", {})
+        if not isinstance(avg_rat, dict):
+            avg_rat = {}
+
+        return {m: str(avg_rat.get(m, "")).strip() for m in metrics}
+
+    except Exception as e:
+        logger.error(f"[synthetic] average_rationale synthesis exception: {e}")
+        return {m: "" for m in metrics}
+
+
+
 # =========================================================
 # ------------------- PROMPT VARS MAP ---------------------
 # =========================================================
@@ -2044,6 +2151,7 @@ def analyze_single_asset_persona_via_url(
                 "image_descriptor": asset.get("image_descriptor"),
                 "synthetic_prompt": prompt_echo,
                 "scores": _normalize_scores_required(None),
+                "score_rationale": _normalize_score_rationale(None),
                 "overall_preference_score": 0,
                 "feedback": _normalize_feedback(None),
                 "error": f"Failed to fetch/encode image url: {str(e)}",
@@ -2100,12 +2208,15 @@ def analyze_single_asset_persona_via_url(
             "image_descriptor": asset.get("image_descriptor"),
             "synthetic_prompt": prompt_echo,
             "scores": _normalize_scores_required(None),
+            "score_rationale": _normalize_score_rationale(None),
             "overall_preference_score": 0,
             "feedback": _normalize_feedback(None),
             "error": result["error"],
         }
 
     scores = _normalize_scores_required(result.get("scores", None))
+    print(f"score rationale --> {result.get("score_rationale")}")
+    score_rationale = _normalize_score_rationale(result.get("score_rationale", None))
     feedback = _normalize_feedback(result.get("feedback", None))
 
     vals = [v for v in scores.values() if isinstance(v, (int, float)) and 1.0 <= float(v) <= 7.0]
@@ -2129,6 +2240,7 @@ def analyze_single_asset_persona_via_url(
         "image_descriptor": asset.get("image_descriptor"),
         "synthetic_prompt": prompt_echo,
         "scores": scores,
+        "score_rationale": score_rationale,
         "overall_preference_score": preference_pct,
         "feedback": feedback,
     }
@@ -2248,6 +2360,7 @@ def run_synthetic_testingV2(
 
             pref_sum = 0.0
             pref_count = 0
+            individual_rationales: List[Dict[str, str]] = []
 
             for r in asset_responses:
                 s = r.get("scores", {}) or {}
@@ -2263,15 +2376,29 @@ def run_synthetic_testingV2(
                     pref_sum += float(op)
                     pref_count += 1
 
+                # Collect individual rationales for synthesis
+                sr = r.get("score_rationale", {})
+                if isinstance(sr, dict) and any(sr.values()):
+                    individual_rationales.append(sr)
+
             avg_scores = {}
             for k in sums.keys():
                 c = counts.get(k, 0)
                 avg_scores[k] = round(sums[k] / c, 1) if c > 0 else 0.0
 
+            # Synthesize combined rationale via LLM
+            print(f"generate combine individual rationales --> {individual_rationales}")
+            avg_rationale = _synthesize_average_rationale(
+                asset_name=asset.get("name", a_id),
+                avg_scores=avg_scores,
+                individual_rationales=individual_rationales,
+            )
+
             aggregated_results[a_id] = {
                 "asset_name": asset.get("name"),
                 "image_descriptor": asset.get("image_descriptor"),
                 "average_scores": avg_scores,
+                "average_rationale": avg_rationale,
                 "average_preference": round(pref_sum / pref_count, 1) if pref_count > 0 else 0.0,
                 "respondent_count": len(asset_responses),
             }
