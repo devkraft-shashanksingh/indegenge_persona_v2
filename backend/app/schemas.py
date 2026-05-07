@@ -464,6 +464,7 @@ class SyntheticImageResultV2(BaseModel):
 class SyntheticAggregatedItemV2(BaseModel):
     asset_name: str
     average_scores: Dict[str, float]
+    average_rationale: Optional[Dict[str, str]] = None
     average_preference: float
     respondent_count: int
 
