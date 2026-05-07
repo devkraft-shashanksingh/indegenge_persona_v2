@@ -2215,7 +2215,6 @@ def analyze_single_asset_persona_via_url(
         }
 
     scores = _normalize_scores_required(result.get("scores", None))
-    print(f"score rationale --> {result.get("score_rationale")}")
     score_rationale = _normalize_score_rationale(result.get("score_rationale", None))
     feedback = _normalize_feedback(result.get("feedback", None))
 
