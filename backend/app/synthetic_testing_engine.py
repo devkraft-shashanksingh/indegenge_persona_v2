@@ -2319,14 +2319,38 @@ def generate_emotion_data(personas: List[Dict[str, Any]], assets: List[Dict[str,
     print(f"prompt with text --> {prompt}")
     
     messages = [{"role": "user", "content": [{"type": "text", "text": prompt}]}]
-    
+
+    # Scale tokens based on persona×asset count to avoid truncation.
+    # ~300 tokens per emotion entry (JSON key/value + 1-2 sentence response).
+    # Cap at 16384 to stay well within MODEL_MAX_TOKENS (32768).
+    expected_cells = len(personas) * len(assets)
+    token_budget = max(2048, expected_cells * 300)
+    token_budget = min(token_budget, 16384)
+
     try:
-        logger.info("[synthetic] generating emotion data matrix")
-        result = _chat_json_synthetic(messages)
+        logger.info(
+            f"[synthetic] generating emotion data matrix "
+            f"personas={len(personas)} assets={len(assets)} "
+            f"expected_cells={expected_cells} token_budget={token_budget}"
+        )
+        result = _chat_json_synthetic(messages, max_completion_tokens=token_budget)
         if "error" in result:
             logger.error(f"[synthetic] emotion data generation failed: {result['error']}")
             return []
-        return result.get("emotion_data", [])
+
+        emotion_data = result.get("emotion_data", [])
+        if not emotion_data:
+            logger.warning(
+                f"[synthetic] emotion_data is empty. "
+                f"LLM returned keys: {list(result.keys())}. "
+                f"Expected {expected_cells} entries."
+            )
+        else:
+            logger.info(
+                f"[synthetic] emotion_data generated: "
+                f"{len(emotion_data)} entries (expected {expected_cells})"
+            )
+        return emotion_data
     except Exception as e:
         logger.error(f"[synthetic] emotion data generation exception: {e}")
         return []
