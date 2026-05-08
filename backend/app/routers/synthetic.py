@@ -109,5 +109,6 @@ async def synthetic_testing_analyze(
         request.persona_ids,
         assets_data,
         request.synthetic_prompt,
+        request.emotion_prompt,
         db
     )

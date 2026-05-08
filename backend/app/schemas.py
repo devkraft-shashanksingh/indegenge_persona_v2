@@ -435,6 +435,7 @@ class SyntheticTestingRequestV2(BaseModel):
     persona_ids: List[int]
     assets: List[SyntheticAssetV2]
     synthetic_prompt: Optional[str] = ""
+    emotion_prompt: Optional[str] = ""
 
 
 
@@ -476,3 +477,5 @@ class SyntheticTestingResponseV2(BaseModel):
     aggregated: Dict[str, SyntheticAggregatedItemV2]
     metadata: SyntheticTestingMetadataV2
     synthetic_prompt:str
+    emotion_prompt: str
+    emotion_data: Optional[List[Dict[str, Any]]] = None
