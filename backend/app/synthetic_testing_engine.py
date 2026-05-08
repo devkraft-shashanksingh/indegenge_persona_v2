@@ -1534,6 +1534,50 @@ Evaluate this asset objectively on a 1.0-7.0 scale (1.0 = Poor/Low, 7.0 = Excell
 }
 """.strip()
 
+DEFAULT_EMOTION_PROMPT = """
+You are an expert AI persona simulator and medical marketing analyst. Your task is to evaluate marketing concepts/images through the lens of specific Healthcare Professional (HCP) personas.
+ 
+Instead of generating long-form text, you must output a structured matrix called "Emotional Response". In this matrix, Concepts must be the rows, and Personas must be the columns.
+ 
+For each "cell" (the intersection of a Concept and a Persona), generate two specific data points:
+Emotional Response: A concise, 1-2 sentence description of the persona's immediate psychological and emotional reaction to the visual and copy.
+Gut Check: An immediate RAG status indicating their overall receptiveness:
+   - GREEN: Positive reaction, feels aligned, trusting, and ready to engage.
+   - AMBER: Mixed reaction, feels intrigued but hesitant, requires more data or clarification.
+   - RED: Negative reaction, feels alienated, skeptical, confused, or dismissive.
+ 
+Input Data:
+Concepts to evaluate (Rows):
+{asset_text}
+
+Personas to simulate (Columns):
+{persona_text}
+ 
+Output format:
+Return ONLY a valid JSON object with a single key "emotion_data" which is an array. Each object in the array represents the evaluation of a single Concept by a single Persona. Do not include introductory text or markdown formatting outside of the JSON block.
+ 
+Use this exact JSON schema:
+ 
+{{
+  "emotion_data": [
+    {{
+      "concept_name": "Name of the image/concept",
+      "persona_name": "Persona Name",
+      "persona_subtype": "Persona Subtype",
+      "emotion_response": "1-2 sentence emotional reaction.",
+      "gut_check": "Green"
+    }},
+    {{
+      "concept_name": "Name of the image/concept",
+      "persona_name": "Another Persona Name",
+      "persona_subtype": "Persona Subtype",
+      "emotion_response": "1-2 sentence emotional reaction.",
+      "gut_check": "Red"
+    }}
+  ]
+}}
+""".strip()
+
 
 # =========================================================
 # ------------------- PROMPT HELPERS ----------------------
@@ -2246,6 +2290,49 @@ def analyze_single_asset_persona_via_url(
     }
 
 
+def generate_emotion_data(personas: List[Dict[str, Any]], assets: List[Dict[str, Any]], emotion_prompt : str) -> List[Dict[str, Any]]:
+    """
+    Generates an emotional response matrix for all personas and assets.
+    """
+    persona_text = ""
+    for i, p in enumerate(personas, 1):
+        print(f"persona data --> {p}")
+        name = p.get('name', f'Persona {i}')
+        sub_type = p.get('persona_subtype', f'Persona {i}')
+        role = p.get('condition') or p.get('full_persona', {}).get('specialty') or 'HCP'
+        bio = p.get('additional_context', {}).get('background', '')
+        persona_text += f"- Name: {name}, Persona SubType: {sub_type}, Role: {role}, Bio: {bio}\n"
+    
+    asset_text = ""
+    for i, a in enumerate(assets, 1):
+        name = a.get('name', f'Asset {i}')
+        desc = a.get('image_descriptor', '')
+        text = a.get('text', '') or a.get('text_content', '')
+        asset_text += f"- Concept Name: {name}, Description: {desc}, Text: {text}\n"
+
+    if not emotion_prompt or not emotion_prompt.strip():
+        emotion_prompt = DEFAULT_EMOTION_PROMPT
+
+    prompt = _safe_format_map(emotion_prompt, {
+        "asset_text": asset_text,
+        "persona_text": persona_text
+    })
+    print(f"prompt with text --> {prompt}")
+    
+    messages = [{"role": "user", "content": [{"type": "text", "text": prompt}]}]
+    
+    try:
+        logger.info("[synthetic] generating emotion data matrix")
+        result = _chat_json_synthetic(messages)
+        if "error" in result:
+            logger.error(f"[synthetic] emotion data generation failed: {result['error']}")
+            return []
+        return result.get("emotion_data", [])
+    except Exception as e:
+        logger.error(f"[synthetic] emotion data generation exception: {e}")
+        return []
+
+
 # =========================================================
 # ------------------- RUNNER V2 (URL) ---------------------
 # =========================================================
@@ -2256,6 +2343,7 @@ def run_synthetic_testingV2(
     persona_ids: List[int],
     assets: List[Dict[str, Any]],
     synthetic_prompt: str = "",
+    emotion_prompt: str = "",
     db=None
 ) -> Dict[str, Any]:
     """
@@ -2267,6 +2355,7 @@ def run_synthetic_testingV2(
         f"[synthetic] run_synthetic_testingV2 start campaign_id={campaign_id} task_id={task_id} "
         f"persona_ids={persona_ids} assets_count={len(assets)} "
         f"override_provided={not _is_blank(synthetic_prompt)}"
+        f"emotion_prompt_provided={not _is_blank(emotion_prompt)}"
     )
 
     logger.info(assets)
@@ -2281,6 +2370,7 @@ def run_synthetic_testingV2(
                     "id": p.id,
                     "name": p.name,
                     "age": p.age,
+                    "persona_subtype": p.persona_subtype,
                     "gender": p.gender,
                     "location": p.location,
                     "condition": p.condition,
@@ -2412,11 +2502,24 @@ def run_synthetic_testingV2(
             else DEFAULT_SYNTHETIC_PROMPT_TEMPLATE
         )
 
-        logger.info("[synthetic] run_synthetic_testingV2 end")
+        emotion_prompt_echo = (
+            emotion_prompt.strip()
+            if not _is_blank(emotion_prompt)
+            else DEFAULT_EMOTION_PROMPT
+        )
 
+        logger.info("[synthetic] run_synthetic_testingV2 end")
+        print(f"waiting for emotion data")
+        try:
+            emotion_data = generate_emotion_data(personas, assets, emotion_prompt_echo)
+            print(f"emotion data generated successfully")
+        except Exception as e:
+            logger.error(f"Failed to generate emotion data: {e}")
+            emotion_data = []
         return {
             "results": results,
             "aggregated": aggregated_results,
+            "emotion_data": emotion_data,
             "metadata": {
                 "campaign_id": campaign_id,
                 "task_id": task_id,
@@ -2425,6 +2528,7 @@ def run_synthetic_testingV2(
                 "timestamp": datetime.now().isoformat(),
             },
             "synthetic_prompt": top_prompt_echo,
+            "emotion_prompt": emotion_prompt_echo,
         }
 
     except Exception as e:
