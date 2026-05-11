@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
-from .. import schemas, models, synthetic_testing_engine
+from .. import schemas, models, synthetic_testing_engine, crud
 from ..database import get_db
 
 router = APIRouter(
@@ -112,3 +112,48 @@ async def synthetic_testing_analyze(
         request.emotion_prompt,
         db
     )
+
+
+@router.post("/analyze/emotion-summary", response_model=schemas.SyntheticTestingResponseLite)
+async def synthetic_testing_analyze_lite(
+    request: schemas.SyntheticTestingRequestLite,
+    db: Session = Depends(get_db)
+):
+    """
+    Lightweight analysis returning only emotion responses and aggregated rationale.
+    Accepts presigned image URLs and auto-maps all personas from the database.
+    """
+    all_personas = crud.get_personas(db)
+    if not all_personas:
+        raise HTTPException(status_code=404, detail="No personas found")
+
+    persona_ids = [p.id for p in all_personas]
+
+    assets_data = [
+        {
+            "id": f"asset_{i}",
+            "name": f"Asset {i + 1}",
+            "data": url,
+            "text": None,
+            "url_image_str": None,
+            "thumbnail_url": None,
+            "thumbnail_url_str": None,
+            "image_descriptor": None,
+        }
+        for i, url in enumerate(request.image_urls)
+    ]
+
+    full_result = synthetic_testing_engine.run_synthetic_testingV2(
+        "",
+        "",
+        persona_ids,
+        assets_data,
+        "",
+        "",
+        db
+    )
+
+    return {
+        "aggregated": full_result["aggregated"],
+        "emotion_data": full_result.get("emotion_data"),
+    }

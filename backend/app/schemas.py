@@ -479,3 +479,10 @@ class SyntheticTestingResponseV2(BaseModel):
     synthetic_prompt:str
     emotion_prompt: str
     emotion_data: Optional[List[Dict[str, Any]]] = None
+
+class SyntheticTestingRequestLite(BaseModel):
+    image_urls: List[str]
+
+class SyntheticTestingResponseLite(BaseModel):
+    aggregated: Dict[str, SyntheticAggregatedItemV2]
+    emotion_data: Optional[List[Dict[str, Any]]] = None
