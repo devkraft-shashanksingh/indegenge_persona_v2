@@ -2474,230 +2474,228 @@ def run_panel_feedback_analysis_v2(
 
 
     # -------------------------------
-    # BUILD JOBS (forced cartesian)
+    # PROCESS IMAGES IN PARALLEL
     # -------------------------------
-    jobs = []
+    images_list = []
+    
     if has_images:
-        for img_idx, img in enumerate(stimulus_images):
+        def process_image(img_idx: int, img: Dict) -> Dict:
             ikey = _image_key(img, img_idx)
+            image_id = img.get("id") if isinstance(img, dict) else None
+            image_url = img.get("url") if isinstance(img, dict) else None
+            image_url_str = img.get("image_url_str") if isinstance(img, dict) else None
+            thumbnail_url = img.get("thumbnail_url") if isinstance(img, dict) else None
+            thumbnail_url_str = img.get("thumbnail_url_str") if isinstance(img, dict) else None
+            image_descriptor = img.get("image_descriptor") if isinstance(img, dict) else None
 
-            for persona_idx, persona_dict in enumerate(personas):
-                card_number = (img_idx * len(personas)) + persona_idx + 1
-                card_key = uuid.uuid4()
+            persona_cards = []
+            
+            # Run personas for this image
+            start_time = datetime.timestamp(datetime.now())
+            print(f"start time {start_time}")
+            with concurrent.futures.ThreadPoolExecutor(max_workers=len(personas)) as executor:
+                futs = {}
+                for persona_idx, persona_dict in enumerate(personas):
+                    card_number = (img_idx * len(personas)) + persona_idx + 1
+                    card_key = uuid.uuid4()
+                    
+                    card_context = {
+                        "card_number": card_number,
+                        "card_key": str(card_key),
+                        "persona_id": persona_dict["id"],
+                        "persona_name": persona_dict.get("name"),
+                        "image_id": image_id,
+                        "image_url": image_url,
+                        "image_url_str": image_url_str,
+                        "thumbnail_url": thumbnail_url,
+                        "thumbnail_url_str": thumbnail_url_str,
+                        "image_descriptor": image_descriptor,
+                        "image_index": img_idx,
+                        "persona_index": persona_idx,
+                        "image_key": ikey,
+                    }
 
-                image_id = img.get("id") if isinstance(img, dict) else None
-                image_url = img.get("url") if isinstance(img, dict) else None
-                image_url_str = img.get("image_url_str") if isinstance(img, dict) else None
-                thumbnail_url = img.get("thumbnail_url") if isinstance(img, dict) else None
-                thumbnail_url_str = img.get("thumbnail_url_str") if isinstance(img, dict) else None
-                image_descriptor = img.get("image_descriptor") if isinstance(img, dict) else None
-
-                jobs.append(
-                    (
-                        persona_idx,
-                        img_idx,
-                        persona_dict,
-                        img,
-                        card_number,
-                        card_key,
-                        image_id,
-                        image_url,
-                        image_url_str,
-                        thumbnail_url,
-                        thumbnail_url_str,
-                        image_descriptor,
-                        ikey,
+                    injected_text = (
+                        "### CARD_CONTEXT\n"
+                        f"{json.dumps(_json_safe(card_context))}\n"
+                        "### END_CARD_CONTEXT\n\n"
+                        f"{stimulus_text}"
                     )
-                )
-    else:
-        for persona_idx, persona_dict in enumerate(personas):
-            jobs.append(
-                (
-                    persona_idx,
-                    None,
-                    persona_dict,
-                    None,
-                    persona_idx + 1,
-                    uuid.uuid4(),
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                )
-            )
 
-    # -------------------------------
-    # EXECUTE PANEL CALLS
-    # -------------------------------
-    persona_cards = []
-    max_workers = 20 if jobs else 1
+                    futs[executor.submit(
+                        analyze_single_persona_panel,
+                        persona_dict,
+                        injected_text,
+                        [img],
+                        content_type,
+                        effective_panel_feedback_prompt,
+                    )] = card_context
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = {}
+                for future in concurrent.futures.as_completed(futs):
+                    meta = futs[future]
+                    try:
+                        res = future.result()
+                        res.update(meta)
+                        persona_cards.append(_json_safe(res))
+                    except Exception as e:
+                        logger.error(f"❌ Panel failed: {e}")
+                        persona_cards.append({"error": str(e), **meta})
 
-        for (
-            persona_index,
-            image_index,
-            persona_dict,
-            single_img,
-            card_number,
-            card_key,
-            image_id,
-            image_url,
-            image_url_str,
-            thumbnail_url,
-            thumbnail_url_str,
-            image_descriptor,
-            image_key,
-        ) in jobs:
-            card_context = {
-                "card_number": card_number,
-                "card_key": str(card_key),
-                "persona_id": persona_dict["id"],
-                "persona_name": persona_dict.get("name"),
+            persona_cards.sort(key=lambda x: x.get("persona_index", 0))
+            #print(f"thread executer time --> {start_time - datetime.timestamp(datetime.now())}")
+            # PER CARD SUMMARY (NO LLM CALL)
+            for c in persona_cards:
+                recs = c.get("recommendations", [])
+                if recs and isinstance(recs, list) and recs and isinstance(recs[0], str):
+                    recs = [{"suggestion": r, "reasoning": ""} for r in recs]
+
+                c["summary"] = {
+                    "aggregated_themes": [],
+                    "dissent_highlights": [],
+                    "recommendations": recs or [],
+                }
+
+            image_result = {
+                "image_key": ikey,
                 "image_id": image_id,
                 "image_url": image_url,
                 "image_url_str": image_url_str,
                 "thumbnail_url": thumbnail_url,
                 "thumbnail_url_str": thumbnail_url_str,
                 "image_descriptor": image_descriptor,
-                "image_index": image_index,
-                "persona_index": persona_index,
-                "image_key": image_key,
+                "cards": persona_cards,
             }
 
-            injected_text = (
-                "### CARD_CONTEXT\n"
-                f"{json.dumps(_json_safe(card_context))}\n"
-                "### END_CARD_CONTEXT\n\n"
-                f"{stimulus_text}"
-            )
+            if generate_image_summaries:
+                img_payload = [{
+                    "id": image_id,
+                    "url": image_url,
+                    "image_url_str": image_url_str,
+                    "thumbnail_url": thumbnail_url,
+                    "thumbnail_url_str": thumbnail_url_str,
+                    "image_descriptor": image_descriptor,
+                }]
+                try:
+                    summary = synthesize_panel_summary(
+                        persona_cards,
+                        stimulus_text,
+                        img_payload,
+                        True,
+                        effective_panel_summary_prompt,
+                    )
+                    image_result["image_summary"] = _json_safe(summary)
+                except Exception as e:
+                    image_result["image_summary"] = {"image_summary_error": str(e)}
+            else:
+                image_result["image_summary"] = None
+                
+            return image_result
 
-            future = executor.submit(
-                analyze_single_persona_panel,
-                persona_dict,
-                injected_text,
-                [single_img] if has_images else None,
-                content_type,
-                effective_panel_feedback_prompt,
-            )
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, len(stimulus_images))) as main_executor:
+            futures_map = {
+                main_executor.submit(process_image, img_idx, img): img_idx 
+                for img_idx, img in enumerate(stimulus_images)
+            }
+            results_map = {}
+            for future in concurrent.futures.as_completed(futures_map):
+                idx = futures_map[future]
+                try:
+                    results_map[idx] = future.result()
+                except Exception as e:
+                    logger.error(f"❌ Image pipeline failed: {e}")
+                    results_map[idx] = {"error": str(e)}
 
-            futures[future] = {**card_context}
-
-        for future in concurrent.futures.as_completed(futures):
-            meta = futures[future]
-            try:
-                result = future.result()
-                result.update(meta)
-                persona_cards.append(_json_safe(result))
-            except Exception as e:
-                logger.error(f"❌ Panel failed: {e}")
-                persona_cards.append({"error": str(e), **meta})
-
-    if has_images:
-        persona_cards.sort(key=lambda x: (x.get("image_index", 0), x.get("persona_index", 0)))
-
-    # -------------------------------
-    # PER CARD SUMMARY (NO LLM CALL)
-    # -------------------------------
-    for c in persona_cards:
-        recs = c.get("recommendations", [])
-        if recs and isinstance(recs, list) and recs and isinstance(recs[0], str):
-            recs = [{"suggestion": r, "reasoning": ""} for r in recs]
-
-        c["summary"] = {
-            "aggregated_themes": [],
-            "dissent_highlights": [],
-            "recommendations": recs or [],
-        }
-
-    # -------------------------------
-    # GROUP BY IMAGE
-    # -------------------------------
-    images_grouped: Dict[str, Dict[str, Any]] = {}
-
-    if has_images:
-        for card in persona_cards:
-            ikey = card.get("image_key") or "unknown_image"
-            if ikey not in images_grouped:
-                images_grouped[ikey] = {
-                    "image_key": ikey,
-                    "image_id": card.get("image_id"),
-                    "image_url": card.get("image_url"),
-                    "image_url_str": card.get("image_url_str"),
-                    "thumbnail_url": card.get("thumbnail_url"),
-                    "thumbnail_url_str": card.get("thumbnail_url_str"),
-                    "image_descriptor": card.get("image_descriptor"),
-                    "cards": [],
-                }
-            images_grouped[ikey]["cards"].append(card)
-
-        images_list = list(images_grouped.values())
-
-        # -------------------------------
-        # IMAGE SUMMARY
-        # -------------------------------
-        if generate_image_summaries:
-            with concurrent.futures.ThreadPoolExecutor(max_workers=20) as ex:
-                futs = {}
-                for img in images_list:
-                    img_payload = [
-                        {
-                            "id": img.get("image_id"),
-                            "url": img.get("image_url"),
-                            "image_url_str": img.get("image_url_str"),
-                            "thumbnail_url": img.get("thumbnail_url"),
-                            "thumbnail_url_str": img.get("thumbnail_url_str"),
-                            "image_descriptor": img.get("image_descriptor"),
-                        }
-                    ]
-                    futs[
-                        ex.submit(
-                            synthesize_panel_summary,
-                            img["cards"],
-                            stimulus_text,
-                            img_payload,
-                            True,
-                            effective_panel_summary_prompt,
-                        )
-                    ] = img["image_key"]
-
-                for f in concurrent.futures.as_completed(futs):
-                    ikey = futs[f]
-                    try:
-                        images_grouped[ikey]["image_summary"] = _json_safe(f.result())
-                    except Exception as e:
-                        images_grouped[ikey]["image_summary"] = {"image_summary_error": str(e)}
-
-            images_list = list(images_grouped.values())
-        else:
-            for k in images_grouped:
-                images_grouped[k]["image_summary"] = None
-            images_list = list(images_grouped.values())
+            for idx in range(len(stimulus_images)):
+                if idx in results_map:
+                    images_list.append(results_map[idx])
 
     else:
-        images_list = [
-            {
-                "image_key": None,
-                "image_id": None,
-                "image_url": None,
-                "image_url_str": None,
-                "thumbnail_url": None,
-                "thumbnail_url_str": None,
-                "image_descriptor": None,
-                "cards": persona_cards,
-                "image_summary": None,
+        # NO IMAGES CASE
+        persona_cards = []
+        with concurrent.futures.ThreadPoolExecutor(max_workers=len(personas)) as executor:
+            futs = {}
+            for persona_idx, persona_dict in enumerate(personas):
+                card_number = persona_idx + 1
+                card_key = uuid.uuid4()
+                
+                card_context = {
+                    "card_number": card_number,
+                    "card_key": str(card_key),
+                    "persona_id": persona_dict["id"],
+                    "persona_name": persona_dict.get("name"),
+                    "image_id": None,
+                    "image_url": None,
+                    "image_url_str": None,
+                    "thumbnail_url": None,
+                    "thumbnail_url_str": None,
+                    "image_descriptor": None,
+                    "image_index": None,
+                    "persona_index": persona_idx,
+                    "image_key": None,
+                }
+
+                injected_text = (
+                    "### CARD_CONTEXT\n"
+                    f"{json.dumps(_json_safe(card_context))}\n"
+                    "### END_CARD_CONTEXT\n\n"
+                    f"{stimulus_text}"
+                )
+
+                futs[executor.submit(
+                    analyze_single_persona_panel,
+                    persona_dict,
+                    injected_text,
+                    None,
+                    content_type,
+                    effective_panel_feedback_prompt,
+                )] = card_context
+
+            for future in concurrent.futures.as_completed(futs):
+                meta = futs[future]
+                try:
+                    res = future.result()
+                    res.update(meta)
+                    persona_cards.append(_json_safe(res))
+                except Exception as e:
+                    logger.error(f"❌ Panel failed: {e}")
+                    persona_cards.append({"error": str(e), **meta})
+
+        persona_cards.sort(key=lambda x: x.get("persona_index", 0))
+
+        # PER CARD SUMMARY (NO LLM CALL)
+        for c in persona_cards:
+            recs = c.get("recommendations", [])
+            if recs and isinstance(recs, list) and recs and isinstance(recs[0], str):
+                recs = [{"suggestion": r, "reasoning": ""} for r in recs]
+
+            c["summary"] = {
+                "aggregated_themes": [],
+                "dissent_highlights": [],
+                "recommendations": recs or [],
             }
-        ]
+
+        images_list = [{
+            "image_key": None,
+            "image_id": None,
+            "image_url": None,
+            "image_url_str": None,
+            "thumbnail_url": None,
+            "thumbnail_url_str": None,
+            "image_descriptor": None,
+            "cards": persona_cards,
+            "image_summary": None,
+        }]
+
+    # Compute overall persona_cards for metadata count
+    all_persona_cards = []
+    for img_res in images_list:
+        all_persona_cards.extend(img_res.get("cards", []))
 
     result = {
         "images": images_list,
         "metadata": {
             "persona_count": len(personas),
-            "cards_count": len(persona_cards),
+            "cards_count": len(all_persona_cards),
             "campaign_id": campaign_id,
             "task_id": task_id,
             "image_count": len(stimulus_images) if has_images else 0,
