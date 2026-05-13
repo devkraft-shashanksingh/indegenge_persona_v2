@@ -179,13 +179,20 @@ async def get_emotion_response(request: schemas.EmotionRequestionModel, db: Sess
     emotional_data = None
     
     if asset_1_agg:
+        # LLM sometimes nests top-level fields inside average_rationale; hoist them out
+        avg_rat = asset_1_agg.get("average_rationale")
+        if isinstance(avg_rat, dict):
+            for key in ("average_preference", "respondent_count", "average_emotion"):
+                if key not in asset_1_agg and key in avg_rat:
+                    asset_1_agg[key] = avg_rat.pop(key)
+
         # Ensure average_preference is rounded to 1 decimal place
         if "average_preference" in asset_1_agg:
             try:
                 asset_1_agg["average_preference"] = round(float(asset_1_agg["average_preference"]), 1)
             except (ValueError, TypeError):
                 pass
-                
+
         # Extract average_emotion to emotional_data
         if "average_emotion" in asset_1_agg:
             avg_emotion = asset_1_agg.pop("average_emotion")
