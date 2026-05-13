@@ -5,7 +5,7 @@ from .. import schemas, models, synthetic_testing_engine, crud
 import json
 import urllib.parse
 from ..database import get_db
-from ..synthetic_testing_engine import DEFAULT_EMOTION_PROMPT
+import concurrent.futures
 
 router = APIRouter(
     prefix="/api/synthetic",
@@ -138,20 +138,20 @@ async def get_emotion_response(request: schemas.EmotionRequestionModel, db: Sess
     if not personas:
         raise HTTPException(status_code=404, detail="No personas found in the database")
 
-    # 2. Create the assets
+    # 2. Create the asset
     assets = []
-    for i, url in enumerate(request.image_urls):
-        parsed_url = urllib.parse.urlparse(url)
-        path_name = parsed_url.path.lstrip('/')
-        if not path_name:
-            path_name = f"Asset {i+1}"
-            
-        assets.append({
-            "id": f"asset_{i+1}",
-            "name": path_name,
-            "data": url,
-            "text": ""
-        })
+    url = request.image_url
+    parsed_url = urllib.parse.urlparse(url)
+    path_name = parsed_url.path.lstrip('/')
+    if not path_name:
+        path_name = "Asset 1"
+        
+    assets.append({
+        "id": "asset_1",
+        "name": path_name,
+        "data": url,
+        "text": ""
+    })
     
     # 3. Generate image descriptors
     try:
@@ -162,11 +162,102 @@ async def get_emotion_response(request: schemas.EmotionRequestionModel, db: Sess
             if isinstance(asset, dict) and "image_descriptor" not in asset:
                 asset["image_descriptor"] = f"Asset {i+1}"
                 
-    # 4. Generate emotion data
+    # 4. Generate scores and rationales
+    results = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+        futures = []
+        for persona in personas:
+            futures.append(
+                executor.submit(
+                    synthetic_testing_engine.analyze_single_asset_persona_via_url,
+                    persona,
+                    assets[0],
+                    ""
+                )
+            )
+        for future in concurrent.futures.as_completed(futures):
+            try:
+                res = future.result()
+                if "error" not in res:
+                    results.append(res)
+            except Exception as e:
+                print(f"Failed to analyze asset for persona: {e}")
+
+    # 5. Generate emotion data
     emotion_prompt_echo = ""
     try:
         emotion_data = synthetic_testing_engine.generate_emotion_data(personas, assets, emotion_prompt_echo)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to generate emotion data: {str(e)}")
+
+    # 6. Aggregate results
+    aggregated_results = {}
+    for asset in assets:
+        a_id = asset["id"]
+        asset_responses = [r for r in results if r.get("asset_id") == a_id and "error" not in r]
+        if not asset_responses:
+            continue
+
+        sums = {
+            "motivation_to_prescribe": 0.0,
+            "connection_to_story": 0.0,
+            "differentiation": 0.0,
+            "believability": 0.0,
+            "stopping_power": 0.0,
+        }
+        counts = {k: 0 for k in sums}
+        pref_sum, pref_count = 0.0, 0
+        individual_rationales = []
+
+        for r in asset_responses:
+            s = r.get("scores", {}) or {}
+            if isinstance(s, dict):
+                for k in sums.keys():
+                    v = s.get(k, 0)
+                    if isinstance(v, (int, float)) and 1.0 <= float(v) <= 7.0:
+                        sums[k] += float(v)
+                        counts[k] += 1
+
+            op = r.get("overall_preference_score", None)
+            if isinstance(op, (int, float)):
+                pref_sum += float(op)
+                pref_count += 1
+
+            sr = r.get("score_rationale", {})
+            if isinstance(sr, dict) and any(sr.values()):
+                individual_rationales.append(sr)
+
+        avg_scores = {k: (round(sums[k] / counts[k], 1) if counts[k] > 0 else 0.0) for k in sums.keys()}
+
+        avg_rationale = synthetic_testing_engine._synthesize_average_rationale(
+            asset_name=asset.get("name", a_id),
+            avg_scores=avg_scores,
+            individual_rationales=individual_rationales,
+        )
+
+        # Filter emotion_data for this asset to synthesize average emotion
+        asset_emotions = [e for e in emotion_data if e.get("concept_name") == asset.get("name")]
+        avg_emotion = synthetic_testing_engine._synthesize_average_emotion(
+            asset_name=asset.get("name", a_id),
+            individual_emotions=asset_emotions,
+        )
+
+        aggregated_results[a_id] = {
+            "asset_name": asset.get("name"),
+            "average_scores": avg_scores,
+            "average_rationale": avg_rationale,
+            "average_preference": round(pref_sum / pref_count, 1) if pref_count > 0 else 0.0,
+            "respondent_count": len(asset_responses),
+            "average_emotion": avg_emotion
+        }
         
-    return schemas.EmotionResponse(emotion_data=emotion_data)
+    # User requested emotion_data to only contain concept_name, emotion_response, gut_check
+    filtered_emotion_data = []
+    for ed in emotion_data:
+        filtered_emotion_data.append({
+            "concept_name": ed.get("concept_name", ""),
+            "emotion_response": ed.get("emotion_response", ""),
+            "gut_check": ed.get("gut_check", "")
+        })
+
+    return schemas.EmotionResponse(results=None, aggregated=aggregated_results, emotion_data=None)

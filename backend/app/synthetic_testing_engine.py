@@ -2012,7 +2012,65 @@ For each metric below, you are given the average score and the individual ration
         return {m: "" for m in metrics}
 
 
+def _synthesize_average_emotion(
+    asset_name: str,
+    individual_emotions: List[Dict[str, str]],
+) -> Dict[str, str]:
+    """
+    Uses LLM to synthesize individual persona emotional responses into a single
+    combined emotional average for the aggregated result.
+    Returns dict with keys 'concept_name', 'emotion_response', 'gut_check'.
+    """
+    persona_texts = []
+    for i, e in enumerate(individual_emotions, 1):
+        persona_name = e.get("persona_name", f"Persona {i}")
+        emotion = e.get("emotion_response", "").strip()
+        gut = e.get("gut_check", "").strip()
+        if emotion or gut:
+            persona_texts.append(f"  {persona_name}: Emotion: {emotion}. Rationale: {gut}")
 
+    prompt = f"""You are synthesizing the emotional response from {len(individual_emotions)} healthcare professionals who evaluated a pharmaceutical marketing asset named "{asset_name}".
+
+Here are their individual emotional reactions:
+"""
+    if persona_texts:
+        prompt += "\n".join(persona_texts) + "\n\n"
+    else:
+        prompt += "  No emotional responses provided.\n\n"
+
+    prompt += f"""Synthesize the common themes into a single overall emotional response for the asset. 
+Also, determine an overall 'gut_check' status ('GREEN', 'AMBER', or 'RED') by aggregating the individual gut checks. If there is a mix of GREEN and AMBER, it might lean AMBER. If there are mostly REDs, it is RED, etc.
+
+Return ONLY valid JSON in this format:
+{{
+  "concept_name": "{asset_name}",
+  "emotion_response": "<A concise 1-2 sentence explanation summarizing the group's collective emotional response and why they feel this way>",
+  "gut_check": "<Must be exactly one of: 'GREEN', 'AMBER', or 'RED'>"
+}}"""
+
+    print(f"average emotion prompt --> {prompt}\nasset name: {asset_name}\nindividual emotions: {individual_emotions}")
+
+    messages = [{"role": "user", "content": [{"type": "text", "text": prompt}]}]
+
+    try:
+        logger.info(f"[synthetic] synthesizing average_emotion for asset={asset_name}")
+        result = _chat_json_synthetic(messages, max_completion_tokens=1024)
+
+        if "error" in result:
+            return {"concept_name": asset_name, "emotion_response": "", "gut_check": ""}
+
+        avg_emotion = result
+        if "average_emotion" in result:
+             avg_emotion = result["average_emotion"]
+             
+        return {
+            "concept_name": asset_name,
+            "emotion_response": avg_emotion.get("emotion_response", ""),
+            "gut_check": avg_emotion.get("gut_check", "")
+        }
+    except Exception as e:
+        logger.error(f"[synthetic] _synthesize_average_emotion exception: {e}")
+        return {"concept_name": asset_name, "emotion_response": "", "gut_check": ""}
 # =========================================================
 # ------------------- PROMPT VARS MAP ---------------------
 # =========================================================

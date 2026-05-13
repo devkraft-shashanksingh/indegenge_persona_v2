@@ -469,6 +469,7 @@ class SyntheticAggregatedItemV2(BaseModel):
     average_rationale: Optional[Dict[str, str]] = None
     average_preference: float
     respondent_count: int
+    average_emotion: Optional[Dict[str, str]] = None
 
 
 
@@ -481,8 +482,10 @@ class SyntheticTestingResponseV2(BaseModel):
     emotion_data: Optional[List[Dict[str, Any]]] = None
 
 class EmotionRequestionModel(BaseModel):
-    image_urls: List[str]
+    image_url: str
 
 class EmotionResponse(BaseModel):
+    results: Optional[List[SyntheticImageResultV2]] = None
+    aggregated: Optional[Dict[str, SyntheticAggregatedItemV2]] = None
     emotion_data: Optional[List[Dict[str, Any]]] = None
 
