@@ -117,7 +117,7 @@ async def synthetic_testing_analyze(
     )
 
 
-@router.post("/emotion/v1", response_model=schemas.EmotionResponse)
+@router.post("/emotion-aggregate/v1", response_model=schemas.EmotionResponse)
 async def get_emotion_response(request: schemas.EmotionRequestionModel, db: Session = Depends(get_db)):
     # 1. Fetch all personas
     all_personas_db = crud.get_personas(db, limit=1000)
@@ -162,102 +162,39 @@ async def get_emotion_response(request: schemas.EmotionRequestionModel, db: Sess
             if isinstance(asset, dict) and "image_descriptor" not in asset:
                 asset["image_descriptor"] = f"Asset {i+1}"
                 
-    # 4. Generate scores and rationales
-    results = []
-    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-        futures = []
-        for persona in personas:
-            futures.append(
-                executor.submit(
-                    synthetic_testing_engine.analyze_single_asset_persona_via_url,
-                    persona,
-                    assets[0],
-                    ""
-                )
-            )
-        for future in concurrent.futures.as_completed(futures):
-            try:
-                res = future.result()
-                if "error" not in res:
-                    results.append(res)
-            except Exception as e:
-                print(f"Failed to analyze asset for persona: {e}")
-
-    # 5. Generate emotion data
-    emotion_prompt_echo = ""
+    # 4. Generate scores, rationales, and emotions in ONE shot
     try:
-        emotion_data = synthetic_testing_engine.generate_emotion_data(personas, assets, emotion_prompt_echo)
+        one_shot_result = synthetic_testing_engine.analyze_single_asset_all_personas_one_shot(
+            personas,
+            assets[0]
+        )
+        if "error" in one_shot_result:
+             raise HTTPException(status_code=500, detail=one_shot_result["error"])
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to generate emotion data: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to analyze asset: {str(e)}")
 
-    # 6. Aggregate results
-    aggregated_results = {}
-    for asset in assets:
-        a_id = asset["id"]
-        asset_responses = [r for r in results if r.get("asset_id") == a_id and "error" not in r]
-        if not asset_responses:
-            continue
-
-        sums = {
-            "motivation_to_prescribe": 0.0,
-            "connection_to_story": 0.0,
-            "differentiation": 0.0,
-            "believability": 0.0,
-            "stopping_power": 0.0,
-        }
-        counts = {k: 0 for k in sums}
-        pref_sum, pref_count = 0.0, 0
-        individual_rationales = []
-
-        for r in asset_responses:
-            s = r.get("scores", {}) or {}
-            if isinstance(s, dict):
-                for k in sums.keys():
-                    v = s.get(k, 0)
-                    if isinstance(v, (int, float)) and 1.0 <= float(v) <= 7.0:
-                        sums[k] += float(v)
-                        counts[k] += 1
-
-            op = r.get("overall_preference_score", None)
-            if isinstance(op, (int, float)):
-                pref_sum += float(op)
-                pref_count += 1
-
-            sr = r.get("score_rationale", {})
-            if isinstance(sr, dict) and any(sr.values()):
-                individual_rationales.append(sr)
-
-        avg_scores = {k: (round(sums[k] / counts[k], 1) if counts[k] > 0 else 0.0) for k in sums.keys()}
-
-        avg_rationale = synthetic_testing_engine._synthesize_average_rationale(
-            asset_name=asset.get("name", a_id),
-            avg_scores=avg_scores,
-            individual_rationales=individual_rationales,
-        )
-
-        # Filter emotion_data for this asset to synthesize average emotion
-        asset_emotions = [e for e in emotion_data if e.get("concept_name") == asset.get("name")]
-        avg_emotion = synthetic_testing_engine._synthesize_average_emotion(
-            asset_name=asset.get("name", a_id),
-            individual_emotions=asset_emotions,
-        )
-
-        aggregated_results[a_id] = {
-            "asset_name": asset.get("name"),
-            "average_scores": avg_scores,
-            "average_rationale": avg_rationale,
-            "average_preference": round(pref_sum / pref_count, 1) if pref_count > 0 else 0.0,
-            "respondent_count": len(asset_responses),
-            "average_emotion": avg_emotion
-        }
-        
-    # User requested emotion_data to only contain concept_name, emotion_response, gut_check
-    filtered_emotion_data = []
-    for ed in emotion_data:
-        filtered_emotion_data.append({
-            "concept_name": ed.get("concept_name", ""),
-            "emotion_response": ed.get("emotion_response", ""),
-            "gut_check": ed.get("gut_check", "")
-        })
-
-    return schemas.EmotionResponse(results=None, aggregated=aggregated_results, emotion_data=None)
+    aggregated_results = one_shot_result.get("aggregated", {})
+    
+    asset_1_agg = aggregated_results.get("asset_1")
+    emotional_data = None
+    
+    if asset_1_agg:
+        # Ensure average_preference is rounded to 1 decimal place
+        if "average_preference" in asset_1_agg:
+            try:
+                asset_1_agg["average_preference"] = round(float(asset_1_agg["average_preference"]), 1)
+            except (ValueError, TypeError):
+                pass
+                
+        # Extract average_emotion to emotional_data
+        if "average_emotion" in asset_1_agg:
+            avg_emotion = asset_1_agg.pop("average_emotion")
+            emotional_data = {
+                "emotion_response": avg_emotion.get("emotion_response", ""),
+                "gut_check": avg_emotion.get("gut_check", "")
+            }
+            
+    return schemas.EmotionResponse(
+        emotional_data=emotional_data,
+        aggregated=asset_1_agg
+    )
