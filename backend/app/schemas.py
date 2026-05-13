@@ -471,7 +471,6 @@ class SyntheticAggregatedItemV2(BaseModel):
     respondent_count: int
 
 
-
 class SyntheticTestingResponseV2(BaseModel):
     results: List[SyntheticImageResultV2]
     aggregated: Dict[str, SyntheticAggregatedItemV2]
@@ -479,3 +478,11 @@ class SyntheticTestingResponseV2(BaseModel):
     synthetic_prompt:str
     emotion_prompt: str
     emotion_data: Optional[List[Dict[str, Any]]] = None
+
+class EmotionRequestionModel(BaseModel):
+    image_url: str
+
+class EmotionResponse(BaseModel):
+    emotional_data: Optional[Dict[str, str]] = None
+    aggregated: Optional[SyntheticAggregatedItemV2] = None
+

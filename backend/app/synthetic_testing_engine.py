@@ -2012,7 +2012,6 @@ For each metric below, you are given the average score and the individual ration
         return {m: "" for m in metrics}
 
 
-
 # =========================================================
 # ------------------- PROMPT VARS MAP ---------------------
 # =========================================================
@@ -2558,3 +2557,106 @@ def run_synthetic_testingV2(
         import traceback
         logger.error(f"[synthetic] Global synthetic testing error (V2): {e}\n{traceback.format_exc()}")
         raise
+
+def analyze_single_asset_all_personas_one_shot(
+    personas: List[Dict[str, Any]],
+    asset: Dict[str, Any]
+) -> Dict[str, Any]:
+    asset_name = asset.get("name", "Unnamed Asset")
+    asset_text = asset.get("text", "")
+    image_descriptor = asset.get("image_descriptor", "")
+    
+    # 1. Prepare image
+    image_data = None
+    mime = "image/png"
+    asset_url = asset.get("data")
+    if asset_url:
+        try:
+            out = image_url_to_base64(asset_url)
+            image_data = out["base64"]
+            mime = out["mime"]
+        except Exception as e:
+            logger.error(f"[synthetic] Failed to fetch image {asset_url}: {e}")
+
+    # 2. Prepare Personas Text
+    persona_texts = []
+    for i, p in enumerate(personas, 1):
+        name = p.get('name', f'Persona {i}')
+        sub_type = p.get('persona_subtype', 'Standard')
+        role = p.get('condition') or p.get('full_persona', {}).get('specialty') or 'HCP'
+        full_persona = p.get('full_persona', {})
+        core = json.dumps(full_persona.get('core', {}))
+        persona_texts.append(f"Persona {i}: {name}\nRole: {role} ({sub_type})\nBio/Core: {core}\nAdditional Context: {p.get('additional_context')}")
+    
+    personas_str = "\n\n".join(persona_texts)
+    
+    # 3. Create prompt
+    prompt = f"""You are an expert AI persona simulator and medical marketing analyst.
+You are evaluating a pharmaceutical marketing asset named "{asset_name}" on behalf of {len(personas)} different healthcare professional personas.
+
+**MARKETING ASSET:**
+Name: {asset_name}
+Description: {image_descriptor}
+Text: {asset_text}
+
+**PERSONAS:**
+{personas_str}
+
+**TASK:**
+You must simulate EACH persona's reaction to the asset INTERNALLY without outputting them.
+Do NOT output the individual persona results. 
+Instead, ONLY calculate and output the AVERAGE/AGGREGATED results for the entire group.
+
+To do this, internally determine each persona's score (1-7), rationale, and emotional response, and then calculate the AGGREGATED results across all personas:
+1. "average_scores": The mathematical average of the 1-7 scores for each metric across all personas.
+2. "average_rationale": Synthesize the individual rationales into a single 2-3 sentence consensus rationale for each metric.
+3. "average_preference": An overall preference score (0-100) rounded to 1 decimal place. (Formula: ((Average of the 5 metrics) - 1) / 6 * 100).
+4. "average_emotion": Synthesize the individual emotional responses into one overall "emotion_response" and determine an overall "gut_check" (GREEN/AMBER/RED) for the group.
+
+Return ONLY a valid JSON object with the following structure:
+{{
+  "aggregated": {{
+    "{asset.get('id', 'asset_1')}": {{
+      "asset_name": "{asset_name}",
+      "average_scores": {{
+        "motivation_to_prescribe": <float>,
+        "connection_to_story": <float>,
+        "differentiation": <float>,
+        "believability": <float>,
+        "stopping_power": <float>
+      }},
+      "average_rationale": {{
+        "motivation_to_prescribe": "<string>",
+        "connection_to_story": "<string>",
+        "differentiation": "<string>",
+        "believability": "<string>",
+        "stopping_power": "<string>"
+      }},
+      "average_preference": <float>,
+      "respondent_count": {len(personas)},
+      "average_emotion": {{
+        "concept_name": "{asset_name}",
+        "emotion_response": "<string>",
+        "gut_check": "<string>"
+      }}
+    }}
+  }}
+}}
+"""
+
+    messages = [{"role": "user", "content": [{"type": "text", "text": prompt}]}]
+    if image_data:
+        messages[0]["content"].append({
+            "type": "image_url",
+            "image_url": {"url": f"data:{mime};base64,{image_data}"},
+        })
+
+    logger.info(f"[synthetic] One-shot analyze all personas for asset {asset_name} (AGGREGATED ONLY)")
+    # Since we are only generating the aggregated object, it will be very fast.
+    result = _chat_json_synthetic(messages, max_completion_tokens=1024)
+    
+    if "error" in result:
+        return {"error": result["error"]}
+        
+    result["results"] = []
+    return result
