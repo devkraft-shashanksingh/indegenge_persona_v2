@@ -295,3 +295,14 @@ class ConceptImage(Base):
     image_url_str = Column(Text, nullable=True)
     thumbnail_url_str = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class TPP(Base):
+    __tablename__ = "tpp"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    brand_id = Column(Integer, ForeignKey("brands.id"), nullable=False, index=True)
+    name = Column(String, nullable=False)
+    text = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True),server_default=func.now(),onupdate=func.now(),nullable=False)
