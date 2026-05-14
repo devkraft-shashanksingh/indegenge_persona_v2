@@ -201,6 +201,23 @@ Return ONLY JSON:
         db.commit()
         db.refresh(row)
 
+        try:
+            campaign_row = (
+                db.query(models.Campaign)
+                .filter(models.Campaign.id == payload.task_id)
+                .first()
+            )
+            if campaign_row:
+                campaign_row.status = payload.status
+                db.commit()
+                db.refresh(campaign_row)
+                logger.info(
+                    f"[upsert] Campaign status synced: campaign_id={payload.task_id} "
+                    f"-> status={payload.status}"
+                )
+        except Exception as sync_err:
+            logger.warning(f"[upsert] Could not sync campaign status: {sync_err}")
+
         return {
             "message": "Task history upserted successfully",
             "task_id": str(row.task_id),

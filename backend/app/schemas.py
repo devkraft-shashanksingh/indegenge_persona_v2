@@ -486,3 +486,37 @@ class EmotionResponse(BaseModel):
     emotional_data: Optional[Dict[str, str]] = None
     aggregated: Optional[SyntheticAggregatedItemV2] = None
 
+
+# === Campaign / ConceptImage Upload Schemas ===
+
+class ConceptImageResponse(BaseModel):
+    id: str
+    url: str
+    thumbnail_url: str
+    image_descriptor: Optional[str] = None
+    image_url_str: Optional[str] = None
+    thumbnail_url_str: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class CampaignResponse(BaseModel):
+    id: str
+    campaign_id: str
+    type: str
+    status: str
+    concept_image_details: List[ConceptImageResponse] = []
+    response_received: Optional[Any] = None
+    error_message: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class UploadImageResponse(BaseModel):
+    message: str
+    campaign: CampaignResponse
+

@@ -63,6 +63,13 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: Optional[str] = None
     GEMINI_MODEL: str = "gemini-1.5-pro-latest"
 
+    # AWS S3 Config
+    AWS_SECRET_KEY: Optional[str] = None
+    AWS_SECRET_ACCESS_KEY: Optional[str] = None
+    REGION: Optional[str] = None
+    S3_SERVICE_BASE_FOLDER: Optional[str] = None
+    S3_BUCKET: Optional[str] = None
+
     class Config:
         case_sensitive = True
         env_file = ".env"

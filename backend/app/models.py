@@ -270,3 +270,28 @@ class TaskHistory(Base):
         nullable=False
     )
 
+
+class Campaign(Base):
+    __tablename__ = "campaigns"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    campaign_id = Column(String, index=True)
+    type = Column(String, default="qual")
+    status = Column(String, default="pending")
+    response_received = Column(JSON, nullable=True)
+    error_message = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+
+class ConceptImage(Base):
+    __tablename__ = "concept_images"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    campaign_id = Column(String, index=True) # Assuming this maps directly to Campaign.campaign_id or we can map to Campaign.id. Let's use string since user schema has campaign_id string in response.
+    url = Column(Text)
+    thumbnail_url = Column(Text)
+    image_descriptor = Column(Text, nullable=True)
+    image_url_str = Column(Text, nullable=True)
+    thumbnail_url_str = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
