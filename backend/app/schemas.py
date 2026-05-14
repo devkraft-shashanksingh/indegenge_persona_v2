@@ -520,3 +520,15 @@ class UploadImageResponse(BaseModel):
     message: str
     campaign: CampaignResponse
 
+
+class TPPResponse(BaseModel):
+    id: str
+    brand_id: int
+    name: str
+    text: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
