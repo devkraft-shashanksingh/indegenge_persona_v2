@@ -1766,6 +1766,9 @@ Gut Check: An immediate RAG status indicating their overall receptiveness:
    - YELLOW: Mixed reaction, feels intrigued but hesitant, requires more data or clarification.
    - RED: Negative reaction, feels alienated, skeptical, confused, or dismissive.
 
+TPP Summary:
+{tpp_summary}
+
 Input Data:
 Concepts to evaluate (Rows):
 {asset_text}
