@@ -480,9 +480,12 @@ class SyntheticTestingResponseV2(BaseModel):
     emotion_data: Optional[List[Dict[str, Any]]] = None
 
 class EmotionRequestionModel(BaseModel):
+    id:str
     image_url: str
 
 class EmotionResponse(BaseModel):
+    id: str
+    image_url: str
     emotional_data: Optional[Dict[str, str]] = None
     aggregated: Optional[SyntheticAggregatedItemV2] = None
 

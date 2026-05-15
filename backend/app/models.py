@@ -265,8 +265,18 @@ class TaskHistory(Base):
 
 
     created_at = Column(
-        DateTime(timezone=True),   # ✅ TIMESTAMP WITH TIME ZONE
+        DateTime(timezone=True),
         server_default=func.now(),
         nullable=False
     )
 
+
+class EmotionAggregate(Base):
+    __tablename__ = "emotion_aggregate"
+
+    id = Column(Integer, primary_key=True, index=True)
+    image_uuid = Column(String, index=True)
+    image_url = Column(String)
+    input_data = Column(JSON, nullable=True)
+    output_data = Column(JSON, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
