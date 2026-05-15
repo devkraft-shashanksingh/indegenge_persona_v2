@@ -1543,7 +1543,7 @@ For each "cell" (the intersection of a Concept and a Persona), generate two spec
 Emotional Response: A concise, 1-2 sentence description of the persona's immediate psychological and emotional reaction to the visual and copy.
 Gut Check: An immediate RAG status indicating their overall receptiveness:
    - GREEN: Positive reaction, feels aligned, trusting, and ready to engage.
-   - AMBER: Mixed reaction, feels intrigued but hesitant, requires more data or clarification.
+   - YELLOW: Mixed reaction, feels intrigued but hesitant, requires more data or clarification.
    - RED: Negative reaction, feels alienated, skeptical, confused, or dismissive.
  
 Input Data:
@@ -2632,7 +2632,7 @@ To do this, internally determine each persona's score (1-7), rationale, and emot
 1. "average_scores": The mathematical average of the 1-7 scores for each metric across all personas.
 2. "average_rationale": Synthesize the individual rationales into a single 2-3 sentence consensus rationale for each metric.
 3. "average_preference": An overall preference score (0-100) rounded to 1 decimal place. (Formula: ((Average of the 5 metrics) - 1) / 6 * 100).
-4. "average_emotion": Synthesize the individual emotional responses into one overall "emotion_response" and determine an overall "gut_check" (GREEN/AMBER/RED) for the group.
+4. "average_emotion": Synthesize the individual emotional responses into one overall "emotion_response" and determine an overall "gut_check" (GREEN/YELLOW/RED) for the group.
 
 Return ONLY a valid JSON object with the following structure:
 {{
