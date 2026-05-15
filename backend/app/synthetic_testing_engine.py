@@ -1543,7 +1543,7 @@ For each "cell" (the intersection of a Concept and a Persona), generate two spec
 Emotional Response: A concise, 1-2 sentence description of the persona's immediate psychological and emotional reaction to the visual and copy.
 Gut Check: An immediate RAG status indicating their overall receptiveness:
    - GREEN: Positive reaction, feels aligned, trusting, and ready to engage.
-   - AMBER: Mixed reaction, feels intrigued but hesitant, requires more data or clarification.
+   - YELLOW: Mixed reaction, feels intrigued but hesitant, requires more data or clarification.
    - RED: Negative reaction, feels alienated, skeptical, confused, or dismissive.
  
 Input Data:
@@ -2446,6 +2446,20 @@ def run_synthetic_testingV2(
 
         logger.info(f"[synthetic] all tasks done (V2) results_count={len(results)}")
 
+        # Fetch cached emotion aggregates from DB
+        cached_emotion_aggs = {}
+        if db:
+            from . import models
+            asset_ids = [a.get("id") for a in assets if a.get("id")]
+            if asset_ids:
+                db_aggs = db.query(models.EmotionAggregate).filter(
+                    models.EmotionAggregate.image_uuid.in_(asset_ids)
+                ).order_by(models.EmotionAggregate.created_at.desc()).all()
+                for agg in db_aggs:
+                    # Since ordered by descending created_at, the first one seen is the latest
+                    if agg.image_uuid not in cached_emotion_aggs and agg.output_data:
+                        cached_emotion_aggs[agg.image_uuid] = agg.output_data
+
         aggregated_results: Dict[str, Any] = {}
 
         for asset in assets:
@@ -2455,68 +2469,75 @@ def run_synthetic_testingV2(
                 logger.warning(f"[synthetic] no successful responses (V2) for asset_id={a_id}")
                 continue
 
-            sums = {
-                "motivation_to_prescribe": 0.0,
-                "connection_to_story": 0.0,
-                "differentiation": 0.0,
-                "believability": 0.0,
-                "stopping_power": 0.0,
-            }
-            counts = {
-                "motivation_to_prescribe": 0,
-                "connection_to_story": 0,
-                "differentiation": 0,
-                "believability": 0,
-                "stopping_power": 0,
-            }
+            cached_data = cached_emotion_aggs.get(a_id)
+            if cached_data and cached_data.get("aggregated"):
+                logger.info(f"[synthetic] using cached aggregated data for asset_id={a_id}")
+                aggregated_results[a_id] = cached_data.get("aggregated")
+                if "image_descriptor" not in aggregated_results[a_id]:
+                    aggregated_results[a_id]["image_descriptor"] = asset.get("image_descriptor")
+            else:
+                sums = {
+                    "motivation_to_prescribe": 0.0,
+                    "connection_to_story": 0.0,
+                    "differentiation": 0.0,
+                    "believability": 0.0,
+                    "stopping_power": 0.0,
+                }
+                counts = {
+                    "motivation_to_prescribe": 0,
+                    "connection_to_story": 0,
+                    "differentiation": 0,
+                    "believability": 0,
+                    "stopping_power": 0,
+                }
 
-            pref_sum = 0.0
-            pref_count = 0
-            individual_rationales: List[Dict[str, str]] = []
+                pref_sum = 0.0
+                pref_count = 0
+                individual_rationales: List[Dict[str, str]] = []
 
-            for r in asset_responses:
-                s = r.get("scores", {}) or {}
-                if isinstance(s, dict):
-                    for k in sums.keys():
-                        v = s.get(k, 0)
-                        if isinstance(v, (int, float)) and 1.0 <= float(v) <= 7.0:
-                            sums[k] += float(v)
-                            counts[k] += 1
+                for r in asset_responses:
+                    s = r.get("scores", {}) or {}
+                    if isinstance(s, dict):
+                        for k in sums.keys():
+                            v = s.get(k, 0)
+                            if isinstance(v, (int, float)) and 1.0 <= float(v) <= 7.0:
+                                sums[k] += float(v)
+                                counts[k] += 1
 
-                op = r.get("overall_preference_score", None)
-                if isinstance(op, (int, float)):
-                    pref_sum += float(op)
-                    pref_count += 1
+                    op = r.get("overall_preference_score", None)
+                    if isinstance(op, (int, float)):
+                        pref_sum += float(op)
+                        pref_count += 1
 
-                # Collect individual rationales for synthesis
-                sr = r.get("score_rationale", {})
-                if isinstance(sr, dict) and any(sr.values()):
-                    individual_rationales.append(sr)
+                    # Collect individual rationales for synthesis
+                    sr = r.get("score_rationale", {})
+                    if isinstance(sr, dict) and any(sr.values()):
+                        individual_rationales.append(sr)
 
-            avg_scores = {}
-            for k in sums.keys():
-                c = counts.get(k, 0)
-                avg_scores[k] = round(sums[k] / c, 1) if c > 0 else 0.0
+                avg_scores = {}
+                for k in sums.keys():
+                    c = counts.get(k, 0)
+                    avg_scores[k] = round(sums[k] / c, 1) if c > 0 else 0.0
 
-            # Synthesize combined rationale via LLM
-            print(f"generate combine individual rationales --> {individual_rationales}")
-            avg_rationale = _synthesize_average_rationale(
-                asset_name=asset.get("name", a_id),
-                avg_scores=avg_scores,
-                individual_rationales=individual_rationales,
-            )
+                # Synthesize combined rationale via LLM
+                print(f"generate combine individual rationales --> {individual_rationales}")
+                avg_rationale = _synthesize_average_rationale(
+                    asset_name=asset.get("name", a_id),
+                    avg_scores=avg_scores,
+                    individual_rationales=individual_rationales,
+                )
 
-            aggregated_results[a_id] = {
-                "asset_name": asset.get("name"),
-                "image_descriptor": asset.get("image_descriptor"),
-                "average_scores": avg_scores,
-                "average_rationale": avg_rationale,
-                "average_preference": round(pref_sum / pref_count, 1) if pref_count > 0 else 0.0,
-                "respondent_count": len(asset_responses),
-            }
-            logger.info(
-                f"[synthetic] aggregated (V2) asset_id={a_id} respondent_count={len(asset_responses)}"
-            )
+                aggregated_results[a_id] = {
+                    "asset_name": asset.get("name"),
+                    "image_descriptor": asset.get("image_descriptor"),
+                    "average_scores": avg_scores,
+                    "average_rationale": avg_rationale,
+                    "average_preference": round(pref_sum / pref_count, 1) if pref_count > 0 else 0.0,
+                    "respondent_count": len(asset_responses),
+                }
+                logger.info(
+                    f"[synthetic] aggregated (V2) asset_id={a_id} respondent_count={len(asset_responses)}"
+                )
 
         top_prompt_echo = (
             synthetic_prompt.strip()
@@ -2611,7 +2632,7 @@ To do this, internally determine each persona's score (1-7), rationale, and emot
 1. "average_scores": The mathematical average of the 1-7 scores for each metric across all personas.
 2. "average_rationale": Synthesize the individual rationales into a single 2-3 sentence consensus rationale for each metric.
 3. "average_preference": An overall preference score (0-100) rounded to 1 decimal place. (Formula: ((Average of the 5 metrics) - 1) / 6 * 100).
-4. "average_emotion": Synthesize the individual emotional responses into one overall "emotion_response" and determine an overall "gut_check" (GREEN/AMBER/RED) for the group.
+4. "average_emotion": Synthesize the individual emotional responses into one overall "emotion_response" and determine an overall "gut_check" (GREEN/YELLOW/RED) for the group.
 
 Return ONLY a valid JSON object with the following structure:
 {{

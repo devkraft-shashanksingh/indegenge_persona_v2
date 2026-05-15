@@ -201,7 +201,24 @@ async def get_emotion_response(request: schemas.EmotionRequestionModel, db: Sess
                 "gut_check": avg_emotion.get("gut_check", "")
             }
             
-    return schemas.EmotionResponse(
+    emotion_response_data = schemas.EmotionResponse(
+        id=request.id,
+        image_url=request.image_url,
         emotional_data=emotional_data,
         aggregated=asset_1_agg
     )
+
+    try:
+        db_emotion_agg = models.EmotionAggregate(
+            image_uuid=request.id,
+            image_url=request.image_url,
+            input_data=request.dict(),
+            output_data=emotion_response_data.dict()
+        )
+        db.add(db_emotion_agg)
+        db.commit()
+    except Exception as e:
+        print(f"Failed to save EmotionAggregate: {str(e)}")
+        db.rollback()
+
+    return emotion_response_data
