@@ -1790,59 +1790,13 @@ PERSONAS:
 
 TASK
 
-You must simulate EACH persona's reaction INTERNALLY without outputting the individual persona results.
-
-For each persona internally determine:
-- emotional reaction
-- considered reaction
-- gut check (GREEN / YELLOW / RED)
-- creative strengths and weaknesses
-- metric scores (1-7)
-
-Then calculate ONLY the AGGREGATED group-level output.
-
-SCORING DIMENSIONS
-Use these scoring dimensions internally:
-1. motivation_to_prescribe
-2. connection_to_story
-3. differentiation
-4. believability
-5. stopping_power
-
-AGGREGATED OUTPUT RULES
-
-1. "average_scores"
-Calculate the mathematical average across all personas for each metric.
-
-2. "average_rationale"
-Generate a 2-3 sentence consensus rationale for each metric.
-These rationales should reflect:
-- emotional first impressions
-- reaction to metaphor/tagline/visual
-- creative effectiveness
-- segment alignment
-- tone consistency
-NOT requests for proof/data.
-
-3. "average_preference"
-Formula:
-((Average of the 5 metrics) - 1) / 6 * 100
-
-Round to 1 decimal place.
-
-4. "average_emotion"
-Synthesize the emotional reactions into:
-- one overall emotional_response
-- one overall gut_check
+For each persona, simulate their immediate emotional reaction and gut check to each marketing concept.
+Output one entry per Concept × Persona combination.
 
 GUT CHECK DEFINITIONS
 - GREEN = Concept works well and drives further engagement
 - YELLOW = Interesting but blocked by a creative issue
 - RED = Disengaging because of tone/metaphor/strategy mismatch
-
-FLIP TRIGGER LOGIC
-Internally determine what creative changes would improve weak reactions,
-but DO NOT output persona-level flip triggers.
 
 BANNED LANGUAGE
 Avoid:
