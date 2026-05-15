@@ -1755,113 +1755,28 @@ Return ONLY valid JSON.
   "confidence": <1-7 float>
 }""".strip()
 
-DEFAULT_EMOTION_PROMPT = """
-You are simulating multiple HCP personas reacting to a pharmaceutical marketing concept at first viewing.
+DEFAULT_EMOTION_PROMPT = """You are an expert AI persona simulator and medical marketing analyst. Your task is to evaluate marketing concepts/images through the lens of specific Healthcare Professional (HCP) personas.
 
-SYSTEM ROLE
-You are an expert AI persona simulator and medical marketing analyst.
+Instead of generating long-form text, you must output a structured matrix called "Emotional Response". In this matrix, Concepts must be the rows, and Personas must be the columns.
 
-You are evaluating a pharmaceutical marketing asset named "{asset_name}" on behalf of {len_personas} different healthcare professional personas.
+For each "cell" (the intersection of a Concept and a Persona), generate two specific data points:
+Emotional Response: A concise, 1-2 sentence description of the persona's immediate psychological and emotional reaction to the visual and copy.
+Gut Check: An immediate RAG status indicating their overall receptiveness:
+   - GREEN: Positive reaction, feels aligned, trusting, and ready to engage.
+   - YELLOW: Mixed reaction, feels intrigued but hesitant, requires more data or clarification.
+   - RED: Negative reaction, feels alienated, skeptical, confused, or dismissive.
 
-CONCEPT-STAGE SCOPE
-All personas have already been briefed on the product via the TPP.
-They already know the indication, mechanism, efficacy, safety, dosing, and target patient profile.
+Input Data:
+Concepts to evaluate (Rows):
+{asset_text}
 
-They are NOT reacting to a sales aid or detail piece.
-They are reacting to an early creative idea — metaphor, headline, visual, tone, and emotional framing.
+Personas to simulate (Columns):
+{persona_text}
 
-Therefore:
-- Do NOT generate reactions focused on missing data, citations, endpoints, comparators, dosing, or proof points.
-- Do NOT critique missing trial evidence.
-- DO evaluate the creative territory, metaphor, tagline, tone, emotional framing, and strategic consistency with the TPP.
+Output format:
+Return ONLY a valid JSON object with a single key "emotion_data" which is an array. Each object in the array represents the evaluation of a single Concept by a single Persona. Do not include introductory text or markdown formatting outside of the JSON block.
 
-INPUT
-
-TPP Summary:
-{tpp_summary}
-
-MARKETING ASSET:
-Name: {asset_name}
-Description: {image_descriptor}
-Text: {asset_text}
-
-PERSONAS:
-{personas_str}
-
-TASK
-
-You must simulate EACH persona's reaction INTERNALLY without outputting the individual persona results.
-
-For each persona internally determine:
-- emotional reaction
-- considered reaction
-- gut check (GREEN / YELLOW / RED)
-- creative strengths and weaknesses
-- metric scores (1-7)
-
-Then calculate ONLY the AGGREGATED group-level output.
-
-SCORING DIMENSIONS
-Use these scoring dimensions internally:
-1. motivation_to_prescribe
-2. connection_to_story
-3. differentiation
-4. believability
-5. stopping_power
-
-AGGREGATED OUTPUT RULES
-
-1. "average_scores"
-Calculate the mathematical average across all personas for each metric.
-
-2. "average_rationale"
-Generate a 2-3 sentence consensus rationale for each metric.
-These rationales should reflect:
-- emotional first impressions
-- reaction to metaphor/tagline/visual
-- creative effectiveness
-- segment alignment
-- tone consistency
-NOT requests for proof/data.
-
-3. "average_preference"
-Formula:
-((Average of the 5 metrics) - 1) / 6 * 100
-
-Round to 1 decimal place.
-
-4. "average_emotion"
-Synthesize the emotional reactions into:
-- one overall emotional_response
-- one overall gut_check
-
-GUT CHECK DEFINITIONS
-- GREEN = Concept works well and drives further engagement
-- YELLOW = Interesting but blocked by a creative issue
-- RED = Disengaging because of tone/metaphor/strategy mismatch
-
-FLIP TRIGGER LOGIC
-Internally determine what creative changes would improve weak reactions,
-but DO NOT output persona-level flip triggers.
-
-BANNED LANGUAGE
-Avoid:
-- "resonates emotionally"
-- "evokes"
-- "speaks to the heart"
-
-BANNED REACTIONS
-Do NOT mention:
-- missing endpoints
-- citations
-- comparator requests
-- dosing details
-- safety details
-- mechanism explanations
-
-OUTPUT FORMAT
-
-Return ONLY a valid JSON object with the following structure:
+Use this exact JSON schema:
 
 {{
   "emotion_data": [
@@ -1869,14 +1784,14 @@ Return ONLY a valid JSON object with the following structure:
       "concept_name": "Name of the image/concept",
       "persona_name": "Persona Name",
       "persona_subtype": "Persona Subtype",
-      "emotion_response": "1-2 sentence emotional reaction referencing a specific concept element.",
+      "emotion_response": "1-2 sentence emotional reaction.",
       "gut_check": "GREEN"
     }},
     {{
       "concept_name": "Name of the image/concept",
       "persona_name": "Another Persona Name",
       "persona_subtype": "Persona Subtype",
-      "emotion_response": "1-2 sentence emotional reaction referencing a specific concept element.",
+      "emotion_response": "1-2 sentence emotional reaction.",
       "gut_check": "RED"
     }}
   ]
