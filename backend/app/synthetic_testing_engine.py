@@ -1756,49 +1756,132 @@ Return ONLY valid JSON.
 }""".strip()
 
 DEFAULT_EMOTION_PROMPT = """
-You are an expert AI persona simulator and medical marketing analyst. Your task is to evaluate marketing concepts/images through the lens of specific Healthcare Professional (HCP) personas.
- 
-Instead of generating long-form text, you must output a structured matrix called "Emotional Response". In this matrix, Concepts must be the rows, and Personas must be the columns.
- 
-For each "cell" (the intersection of a Concept and a Persona), generate two specific data points:
-Emotional Response: A concise, 1-2 sentence description of the persona's immediate psychological and emotional reaction to the visual and copy.
-Gut Check: An immediate RAG status indicating their overall receptiveness:
-   - GREEN: Positive reaction, feels aligned, trusting, and ready to engage.
-   - YELLOW: Mixed reaction, feels intrigued but hesitant, requires more data or clarification.
-   - RED: Negative reaction, feels alienated, skeptical, confused, or dismissive.
- 
-Input Data:
-Concepts to evaluate (Rows):
-{asset_text}
+You are simulating multiple HCP personas reacting to a pharmaceutical marketing concept at first viewing.
 
-Personas to simulate (Columns):
-{persona_text}
- 
-Output format:
-Return ONLY a valid JSON object with a single key "emotion_data" which is an array. Each object in the array represents the evaluation of a single Concept by a single Persona. Do not include introductory text or markdown formatting outside of the JSON block.
- 
-Use this exact JSON schema:
- 
+SYSTEM ROLE
+You are an expert AI persona simulator and medical marketing analyst.
+
+You are evaluating a pharmaceutical marketing asset named "{asset_name}" on behalf of {len_personas} different healthcare professional personas.
+
+CONCEPT-STAGE SCOPE
+All personas have already been briefed on the product via the TPP.
+They already know the indication, mechanism, efficacy, safety, dosing, and target patient profile.
+
+They are NOT reacting to a sales aid or detail piece.
+They are reacting to an early creative idea — metaphor, headline, visual, tone, and emotional framing.
+
+Therefore:
+- Do NOT generate reactions focused on missing data, citations, endpoints, comparators, dosing, or proof points.
+- Do NOT critique missing trial evidence.
+- DO evaluate the creative territory, metaphor, tagline, tone, emotional framing, and strategic consistency with the TPP.
+
+INPUT
+
+TPP Summary:
+{tpp_summary}
+
+MARKETING ASSET:
+Name: {asset_name}
+Description: {image_descriptor}
+Text: {asset_text}
+
+PERSONAS:
+{personas_str}
+
+TASK
+
+You must simulate EACH persona's reaction INTERNALLY without outputting the individual persona results.
+
+For each persona internally determine:
+- emotional reaction
+- considered reaction
+- gut check (GREEN / YELLOW / RED)
+- creative strengths and weaknesses
+- metric scores (1-7)
+
+Then calculate ONLY the AGGREGATED group-level output.
+
+SCORING DIMENSIONS
+Use these scoring dimensions internally:
+1. motivation_to_prescribe
+2. connection_to_story
+3. differentiation
+4. believability
+5. stopping_power
+
+AGGREGATED OUTPUT RULES
+
+1. "average_scores"
+Calculate the mathematical average across all personas for each metric.
+
+2. "average_rationale"
+Generate a 2-3 sentence consensus rationale for each metric.
+These rationales should reflect:
+- emotional first impressions
+- reaction to metaphor/tagline/visual
+- creative effectiveness
+- segment alignment
+- tone consistency
+NOT requests for proof/data.
+
+3. "average_preference"
+Formula:
+((Average of the 5 metrics) - 1) / 6 * 100
+
+Round to 1 decimal place.
+
+4. "average_emotion"
+Synthesize the emotional reactions into:
+- one overall emotional_response
+- one overall gut_check
+
+GUT CHECK DEFINITIONS
+- GREEN = Concept works well and drives further engagement
+- YELLOW = Interesting but blocked by a creative issue
+- RED = Disengaging because of tone/metaphor/strategy mismatch
+
+FLIP TRIGGER LOGIC
+Internally determine what creative changes would improve weak reactions,
+but DO NOT output persona-level flip triggers.
+
+BANNED LANGUAGE
+Avoid:
+- "resonates emotionally"
+- "evokes"
+- "speaks to the heart"
+
+BANNED REACTIONS
+Do NOT mention:
+- missing endpoints
+- citations
+- comparator requests
+- dosing details
+- safety details
+- mechanism explanations
+
+OUTPUT FORMAT
+
+Return ONLY a valid JSON object with the following structure:
+
 {{
   "emotion_data": [
     {{
       "concept_name": "Name of the image/concept",
       "persona_name": "Persona Name",
       "persona_subtype": "Persona Subtype",
-      "emotion_response": "1-2 sentence emotional reaction.",
-      "gut_check": "Green"
+      "emotion_response": "1-2 sentence emotional reaction referencing a specific concept element.",
+      "gut_check": "GREEN"
     }},
     {{
       "concept_name": "Name of the image/concept",
       "persona_name": "Another Persona Name",
       "persona_subtype": "Persona Subtype",
-      "emotion_response": "1-2 sentence emotional reaction.",
-      "gut_check": "Red"
+      "emotion_response": "1-2 sentence emotional reaction referencing a specific concept element.",
+      "gut_check": "RED"
     }}
   ]
 }}
 """.strip()
-
 
 # =========================================================
 # ------------------- PROMPT HELPERS ----------------------
@@ -2532,9 +2615,32 @@ def generate_emotion_data(personas: List[Dict[str, Any]], assets: List[Dict[str,
     if not emotion_prompt or not emotion_prompt.strip():
         emotion_prompt = DEFAULT_EMOTION_PROMPT
 
+    tpp_summary = """
+# Pentesto® TPP
+
+| | |
+|---|---|
+| **Indication** | Pentesto® (sacubitril/valsartan) is indicated to reduce the risk of cardiovascular death and hospitalization for heart failure in adult patients with chronic heart failure. Benefit is most evident in patients with LVEF below normal. Pediatric indication: symptomatic HF with systemic LV systolic dysfunction in patients ≥1 year. |
+| **MOA** | First-in-class Angiotensin Receptor–Neprilysin Inhibitor (ARNI). Sacubitril inhibits neprilysin, augmenting protective natriuretic peptides (BNP, ANP, CNP). Valsartan blocks the angiotensin II type-1 receptor, suppressing maladaptive RAAS signaling. Dual-pathway action rebalances both harmful and protective neurohormonal systems — legacy ACEi/ARB addresses only one arm. |
+| **Study Population** | 14,500+ patients across 4 Phase III RCTs spanning the LVEF spectrum: HFrEF (PARADIGM-HF, n=8,442), in-hospital ADHF (PIONEER-HF, n=881), HFpEF (PARAGON-HF, n=4,796), post-worsening HFmrEF/HFpEF (PARAGLIDE-HF, n=466). NYHA II–IV, elevated NT-proBNP, on background GDMT. |
+| **Efficacy** | **Primary (PARADIGM-HF vs. enalapril, HFrEF):**<br>• 20% RRR in CV death (13.3% vs. 16.5%; p<0.001)<br>• 21% RRR in HF hospitalization (12.8% vs. 15.6%; p<0.001)<br>• 16% reduction in all-cause mortality (17.0% vs. 19.8%; p=0.0009)<br>• Composite endpoint HR 0.80; p<0.0001 — trial stopped early for efficacy<br><br>**Secondary / supporting:**<br>• 29% greater NT-proBNP reduction at Weeks 4–8 vs. enalapril<br>• 35% less decline in KCCQ-23 QoL score at 8 months<br>• PIONEER-HF: superior in-hospital NT-proBNP reduction; >80% persistence at 12 months when initiated pre-discharge<br>• PROVE-HF: ~7–8% absolute LVEF increase at 6–12 months (reverse remodeling)<br>• PARAGON-HF (HFpEF): primary narrowly missed (HR 0.87; p=0.059); exploratory benefit in lower-EF and female subgroups<br>• PARAGLIDE-HF: 15% greater NT-proBNP reduction vs. valsartan in post-worsening HFmrEF/HFpEF<br><br>**Guideline status:** AHA/ACC/HFSA Class I, Level A — preferred neurohormonal backbone of 4-pillar GDMT (ARNI + β-blocker + MRA + SGLT2i); 4-pillar combination reduces CV death/HF hosp by ~62% vs. ACEi+BB. |
+| **Administration** | Oral, twice daily. Three strengths: 24/26, 49/51, 97/103 mg. Standard start 49/51 mg BID (if on moderate–high dose ACEi/ARB); reduced start 24/26 mg BID (treatment-naïve, low-dose, eGFR <30, or moderate hepatic impairment). Titrate every 2–4 weeks to target 97/103 mg BID. **Mandatory 36-hour washout from ACEi** (angioedema risk); no washout needed from ARB. No food restrictions; no routine coagulation monitoring. |
+| **Safety / Tolerability** | **Boxed Warning:** Fetal toxicity — discontinue when pregnancy detected.<br>**Contraindications:** Concomitant ACEi (within 36 hrs); prior ACEi/ARB-related angioedema; concomitant aliskiren in diabetes.<br>**Warnings:** Hypotension, angioedema, hyperkalemia, renal impairment.<br>**Common AEs (≥5%):** Hypotension, hyperkalemia, cough, dizziness, renal lab abnormalities.<br>**Tolerability edge:** Fewer AE-driven discontinuations vs. enalapril; renal outcomes favorable vs. enalapril (fewer significant creatinine elevations); in-hospital initiation AE profile comparable to standard therapy. |
+| **Cost / Access** | Branded Pentesto®: Commercial Tier 2–3 (PA common); Medicare Part D Tier 3–4. **Generic sacubitril/valsartan available since July 2025**, bioequivalent and increasingly formulary-preferred. Branded differentiation now anchored in service, persistence programs, and educational ecosystem — affordability is no longer the prescribing barrier. |
+
+---
+*Confidential — for internal concepting and persona-evaluation use only. Not promotional.*
+    """
+
     prompt = _safe_format_map(emotion_prompt, {
         "asset_text": asset_text,
-        "persona_text": persona_text
+        "persona_text": persona_text,
+        "personas_str": persona_text,
+        "tpp_summary": tpp_summary,
+        "len_personas": len(personas),
+        "asset_name": assets[0].get('name', 'Asset 1') if assets else 'Asset 1',
+        "image_descriptor": assets[0].get('image_descriptor', '') if assets else '',
+        "asset_id": assets[0].get('id', 'asset_1') if assets else 'asset_1',
     })
     print(f"prompt with text --> {prompt}")
     
@@ -2554,21 +2660,33 @@ def generate_emotion_data(personas: List[Dict[str, Any]], assets: List[Dict[str,
             f"expected_cells={expected_cells} token_budget={token_budget}"
         )
         result = _chat_json_synthetic(messages, max_completion_tokens=token_budget)
+        print(f"result : {result}")
         if "error" in result:
             logger.error(f"[synthetic] emotion data generation failed: {result['error']}")
             return []
 
-        emotion_data = result.get("emotion_data", [])
+        emotion_data = []
+        # Support the new prompt format where average_emotion is inside aggregated
+        if "aggregated" in result:
+            aggregated = result["aggregated"]
+            for asset_id, data in aggregated.items():
+                if isinstance(data, dict) and "average_emotion" in data:
+                    emotion_data.append(data["average_emotion"])
+
+        # Fallback to the old prompt format
+        if not emotion_data:
+            emotion_data = result.get("emotion_data", [])
+
         if not emotion_data:
             logger.warning(
                 f"[synthetic] emotion_data is empty. "
                 f"LLM returned keys: {list(result.keys())}. "
-                f"Expected {expected_cells} entries."
+                f"Expected {expected_cells} entries (or aggregated data)."
             )
         else:
             logger.info(
                 f"[synthetic] emotion_data generated: "
-                f"{len(emotion_data)} entries (expected {expected_cells})"
+                f"{len(emotion_data)} entries"
             )
         return emotion_data
     except Exception as e:
@@ -2887,7 +3005,7 @@ def analyze_single_asset_all_personas_one_shot(
     For each persona internally determine:
     - emotional reaction
     - considered reaction
-    - gut check (GREEN / AMBER / RED)
+    - gut check (GREEN / YELLOW / RED)
     - creative strengths and weaknesses
     - metric scores (1-7)
 
@@ -2929,7 +3047,7 @@ def analyze_single_asset_all_personas_one_shot(
 
     GUT CHECK DEFINITIONS
     - GREEN = Concept works well and drives further engagement
-    - AMBER = Interesting but blocked by a creative issue
+    - YWLLOW = Interesting but blocked by a creative issue
     - RED = Disengaging because of tone/metaphor/strategy mismatch
 
     FLIP TRIGGER LOGIC
@@ -2978,7 +3096,7 @@ def analyze_single_asset_all_personas_one_shot(
           "average_emotion": {{
             "concept_name": "{asset_name}",
             "emotion_response": "<string>",
-            "gut_check": "<GREEN | AMBER | RED>"
+            "gut_check": "<GREEN | YELLOW | RED>"
           }}
         }}
       }}
