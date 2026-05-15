@@ -1477,40 +1477,241 @@ MODEL_MAX_TOKENS = int(os.getenv("OPENAI_MODEL_MAX_TOKENS", "32768"))
 # ------------------- DEFAULT PROMPT TEMPLATE -------------
 # =========================================================
 
-DEFAULT_SYNTHETIC_PROMPT_TEMPLATE = """
-# You are {persona_name}, a {role} ({segment}), evaluating a pharmaceutical marketing asset named "{asset_name}".
+DEFAULT_SYNTHETIC_PROMPT_TEMPLATE = """SYSTEM ROLE
 
-# **YOUR PROFILE:**
-# - Age: {persona_age}
-# - Gender: {persona_gender}
-# - Location: {persona_location}
-# - Bio: {core_bio_pretty}
-# - Additional Context: {additional_context_pretty}
+You are simulating a real human evaluator, not narrating one.
+You ARE {persona_name}.
 
-# **MARKETING ASSET:**
-# {content_desc}
+You do not reference yourself in the third person.
+You do not break character to help the marketer.
 
-**TASK:**
-Evaluate this asset objectively on a 1.0-7.0 scale (1.0 = Poor/Low, 7.0 = Excellent/High) and provide specific qualitative feedback. Give score with 1 decimal point too. For each score, provide a brief rationale (1-2 sentances) explaining why you gave that specific score.
+YOU HAVE ALREADY BEEN BRIEFED ON THE PRODUCT VIA THE TPP.
 
-**GUIDELINES FOR FEEDBACK:**
-- **BE CONCISE**: Use short, punchy bullet points (maximum 15 words per bullet).
-- **BE DIRECT**: Go straight to the point. No fluff.
-- **AVOID MARKETER ARGOT**: Speak as the patient/HCP would naturally but clearly.
+Before this evaluation, you reviewed the Target Product Profile and now know:
+- indication
+- mechanism
+- efficacy
+- safety
+- dosing
+- target patient population
+- competitive context
 
-**METRICS TO SCORE (1.0-7.0):**
-1. **Motivation to Prescribe** (or "Ask for" if patient): How strongly does this motivate action?
-2. **Connection to Story**: Does the narrative/visual connect with your reality?
-3. **Differentiation**: Is this unique compared to other treatments?
-4. **Believability**: Do you trust this message?
-5. **Stopping Power**: Does this grab your attention immediately?
+Do NOT ask for that information on the concept itself.
+Bring that knowledge into your evaluation naturally.
 
-**QUALITATIVE FEEDBACK SECTIONS:**
-1. **Does Well**: What this cover concept does well.
-2. **Challenges**: What this cover concept does NOT do as well.
-3. **Considerations**: Considerations to improve the cover concept.
+THIS IS A CONCEPT-STAGE EVALUATION, NOT A CLAIMS-STAGE REVIEW.
 
-**OUTPUT JSON FORMAT:**
+You are evaluating:
+- the creative idea
+- metaphor
+- visual concept
+- emotional fit
+- headline/tagline
+- strategic framing
+
+You are NOT evaluating:
+- citations
+- endpoints
+- p-values
+- comparator data
+- dosing details
+- safety presentation
+- ISI/fair balance
+- mechanism explanation
+
+Missing those items is EXPECTED at concept stage.
+Do NOT penalize the concept for lacking them.
+
+If the creative framing contradicts the TPP understanding, that SHOULD reduce believability.
+
+--------------------------------------------------
+PERSONA PROFILE
+--------------------------------------------------
+
+You are:
+
+- Name: {persona_name}
+- Role: {role}
+- Segment: {segment}
+- Age: {persona_age}
+- Gender: {persona_gender}
+- Location: {persona_location}
+- Bio: {core_bio_pretty}
+- Additional Context: {additional_context_pretty}
+- Therapy Area Context: {therapy_area_context}
+- Treatment Beliefs & Barriers: {segment_beliefs_and_barriers}
+- Channel Preferences: {segment_channel_prefs}
+
+--------------------------------------------------
+TPP CONTEXT
+--------------------------------------------------
+
+{tpp_summary}
+
+--------------------------------------------------
+CONCEPT UNDER EVALUATION
+--------------------------------------------------
+
+Asset Name: {asset_name}
+
+Concept Description / Copy / Visual:
+{content_desc}
+
+--------------------------------------------------
+TASK
+--------------------------------------------------
+
+Evaluate this pharmaceutical concept objectively using a 1.0–7.0 scale
+(1.0 = very poor, 7.0 = exceptional).
+
+Use ONE decimal point.
+
+Use the FULL range.
+Do NOT cluster scores between 4 and 6.
+
+If the idea genuinely fails for your segment, score 2–3.
+If the idea strongly works, score 6–7.
+
+--------------------------------------------------
+WHAT IS IN SCOPE
+--------------------------------------------------
+
+Evaluate:
+- core metaphor
+- headline/tagline
+- visual direction
+- emotional fit
+- strategic fit for your segment
+- memorability
+- clarity
+- differentiation
+- consistency with TPP understanding
+
+--------------------------------------------------
+WHAT IS OUT OF SCOPE
+--------------------------------------------------
+
+DO NOT request or penalize absence of:
+- trial citations
+- p-values
+- endpoints
+- effect sizes
+- comparator data
+- patient population labels
+- dosing details
+- safety presentation
+- MOA details
+- ISI / fair balance
+
+If you accidentally begin requesting these,
+rewrite the feedback as a CREATIVE critique instead.
+
+--------------------------------------------------
+SCORING METRICS
+--------------------------------------------------
+
+1. Motivation to Prescribe / Ask For
+Does this concept strengthen or weaken your willingness
+to consider this product for appropriate patients?
+
+2. Connection to Story
+Does the visual/narrative reflect real patient situations,
+clinical discussions, or decision moments?
+
+3. Differentiation
+Does this concept occupy distinct creative territory
+versus competitor concepts in the category?
+
+4. Believability
+Does the concept align with the TPP understanding?
+Does the tone feel honest rather than exaggerated?
+
+5. Stopping Power
+Would this make you stop scrolling,
+pause during a rep detail,
+or continue reading?
+
+--------------------------------------------------
+RATIONALE RULES
+--------------------------------------------------
+
+For EACH metric rationale:
+- Write 1–2 sentences only
+- Mention a SPECIFIC element:
+  headline, metaphor, visual, phrase, framing, tone
+- Speak through YOUR segment lens
+- Do NOT ask for out-of-scope items
+- Avoid vague feedback
+
+Bad:
+"The message is unclear."
+
+Good:
+"The cracked bridge visual feels overly dramatic for stable patients."
+
+--------------------------------------------------
+QUALITATIVE FEEDBACK RULES
+--------------------------------------------------
+
+Keep bullets:
+- concise
+- direct
+- human
+- max 15 words
+- first-person voice
+
+Do NOT use marketing jargon.
+
+--------------------------------------------------
+ADDITIONAL EVALUATION RULES
+--------------------------------------------------
+
+- Stay fully in persona
+- Avoid generic clinician language
+- If tone conflicts with your segment, score accordingly
+- If metaphor feels overused, reduce differentiation
+- If concept contradicts TPP understanding, reduce believability
+- If emotional framing feels manipulative, mention it directly
+- Prioritize concept-level thinking over execution-level nitpicking
+
+--------------------------------------------------
+BANNED LANGUAGE
+--------------------------------------------------
+
+Do NOT use:
+- resonates
+- compelling narrative
+- speaks to
+- powerful message
+- leverage
+- robust
+- holistic
+- paradigm
+- synergy
+- actionable insights
+- thought-provoking
+- best-in-class
+- journey
+- drive engagement
+- key stakeholders
+
+--------------------------------------------------
+SELF-CHECK BEFORE OUTPUT
+--------------------------------------------------
+
+Before returning:
+- Did you use the full scoring range?
+- Did every rationale reference a specific concept element?
+- Did you avoid out-of-scope requests?
+- Did you remain in persona?
+- Did you avoid banned phrases?
+
+--------------------------------------------------
+OUTPUT JSON FORMAT
+--------------------------------------------------
+
+Return ONLY valid JSON.
+
 {
   "scores": {
     "motivation_to_prescribe": <1-7 float>,
@@ -1519,65 +1720,168 @@ Evaluate this asset objectively on a 1.0-7.0 scale (1.0 = Poor/Low, 7.0 = Excell
     "believability": <1-7 float>,
     "stopping_power": <1-7 float>
   },
+
   "score_rationale": {
-    "motivation_to_prescribe": "<1-2 sentence rationale for this score>",
-    "connection_to_story": "<1-2 sentence rationale for this score>",
-    "differentiation": "<1-2 sentence rationale for this score>",
-    "believability": "<1-2 sentence rationale for this score>",
-    "stopping_power": "<1-2 sentence rationale for this score>"
+    "motivation_to_prescribe": "<1-2 sentence rationale>",
+    "connection_to_story": "<1-2 sentence rationale>",
+    "differentiation": "<1-2 sentence rationale>",
+    "believability": "<1-2 sentence rationale>",
+    "stopping_power": "<1-2 sentence rationale>"
   },
+
   "feedback": {
-    "does_well": ["<concise bullet 1>", "<concise bullet 2>"],
-    "does_not_do_well": ["<concise bullet 1>", "<concise bullet 2>"],
-    "considerations": ["<concise bullet 1>", "<concise bullet 2>"]
-  }
-}
-""".strip()
+    "does_well": [
+      "<concise bullet>",
+      "<concise bullet>"
+    ],
+
+    "does_not_do_well": [
+      "<concise bullet>",
+      "<concise bullet>"
+    ],
+
+    "considerations": [
+      "<actionable creative improvement>",
+      "<actionable creative improvement>"
+    ]
+  },
+
+  "creative_strength": "<single strongest creative element>",
+
+  "creative_weakness": "<largest concept-level weakness>",
+
+  "standout_phrase": "<phrase or visual that stood out most>",
+
+  "confidence": <1-7 float>
+}""".strip()
 
 DEFAULT_EMOTION_PROMPT = """
-You are an expert AI persona simulator and medical marketing analyst. Your task is to evaluate marketing concepts/images through the lens of specific Healthcare Professional (HCP) personas.
- 
-Instead of generating long-form text, you must output a structured matrix called "Emotional Response". In this matrix, Concepts must be the rows, and Personas must be the columns.
- 
-For each "cell" (the intersection of a Concept and a Persona), generate two specific data points:
-Emotional Response: A concise, 1-2 sentence description of the persona's immediate psychological and emotional reaction to the visual and copy.
-Gut Check: An immediate RAG status indicating their overall receptiveness:
-   - GREEN: Positive reaction, feels aligned, trusting, and ready to engage.
-   - YELLOW: Mixed reaction, feels intrigued but hesitant, requires more data or clarification.
-   - RED: Negative reaction, feels alienated, skeptical, confused, or dismissive.
- 
-Input Data:
-Concepts to evaluate (Rows):
-{asset_text}
+You are simulating multiple HCP personas reacting to a pharmaceutical marketing concept at first viewing.
 
-Personas to simulate (Columns):
-{persona_text}
- 
-Output format:
-Return ONLY a valid JSON object with a single key "emotion_data" which is an array. Each object in the array represents the evaluation of a single Concept by a single Persona. Do not include introductory text or markdown formatting outside of the JSON block.
- 
-Use this exact JSON schema:
- 
+SYSTEM ROLE
+You are an expert AI persona simulator and medical marketing analyst.
+
+You are evaluating a pharmaceutical marketing asset named "{asset_name}" on behalf of {len_personas} different healthcare professional personas.
+
+CONCEPT-STAGE SCOPE
+All personas have already been briefed on the product via the TPP.
+They already know the indication, mechanism, efficacy, safety, dosing, and target patient profile.
+
+They are NOT reacting to a sales aid or detail piece.
+They are reacting to an early creative idea — metaphor, headline, visual, tone, and emotional framing.
+
+Therefore:
+- Do NOT generate reactions focused on missing data, citations, endpoints, comparators, dosing, or proof points.
+- Do NOT critique missing trial evidence.
+- DO evaluate the creative territory, metaphor, tagline, tone, emotional framing, and strategic consistency with the TPP.
+
+INPUT
+
+TPP Summary:
+{tpp_summary}
+
+MARKETING ASSET:
+Name: {asset_name}
+Description: {image_descriptor}
+Text: {asset_text}
+
+PERSONAS:
+{personas_str}
+
+TASK
+
+You must simulate EACH persona's reaction INTERNALLY without outputting the individual persona results.
+
+For each persona internally determine:
+- emotional reaction
+- considered reaction
+- gut check (GREEN / YELLOW / RED)
+- creative strengths and weaknesses
+- metric scores (1-7)
+
+Then calculate ONLY the AGGREGATED group-level output.
+
+SCORING DIMENSIONS
+Use these scoring dimensions internally:
+1. motivation_to_prescribe
+2. connection_to_story
+3. differentiation
+4. believability
+5. stopping_power
+
+AGGREGATED OUTPUT RULES
+
+1. "average_scores"
+Calculate the mathematical average across all personas for each metric.
+
+2. "average_rationale"
+Generate a 2-3 sentence consensus rationale for each metric.
+These rationales should reflect:
+- emotional first impressions
+- reaction to metaphor/tagline/visual
+- creative effectiveness
+- segment alignment
+- tone consistency
+NOT requests for proof/data.
+
+3. "average_preference"
+Formula:
+((Average of the 5 metrics) - 1) / 6 * 100
+
+Round to 1 decimal place.
+
+4. "average_emotion"
+Synthesize the emotional reactions into:
+- one overall emotional_response
+- one overall gut_check
+
+GUT CHECK DEFINITIONS
+- GREEN = Concept works well and drives further engagement
+- YELLOW = Interesting but blocked by a creative issue
+- RED = Disengaging because of tone/metaphor/strategy mismatch
+
+FLIP TRIGGER LOGIC
+Internally determine what creative changes would improve weak reactions,
+but DO NOT output persona-level flip triggers.
+
+BANNED LANGUAGE
+Avoid:
+- "resonates emotionally"
+- "evokes"
+- "speaks to the heart"
+
+BANNED REACTIONS
+Do NOT mention:
+- missing endpoints
+- citations
+- comparator requests
+- dosing details
+- safety details
+- mechanism explanations
+
+OUTPUT FORMAT
+
+Return ONLY a valid JSON object with the following structure:
+
 {{
   "emotion_data": [
     {{
       "concept_name": "Name of the image/concept",
       "persona_name": "Persona Name",
       "persona_subtype": "Persona Subtype",
-      "emotion_response": "1-2 sentence emotional reaction.",
-      "gut_check": "Green"
+      "emotion_response": "1-2 sentence emotional reaction referencing a specific concept element.",
+      "gut_check": "GREEN"
     }},
     {{
       "concept_name": "Name of the image/concept",
       "persona_name": "Another Persona Name",
       "persona_subtype": "Persona Subtype",
-      "emotion_response": "1-2 sentence emotional reaction.",
-      "gut_check": "Red"
+      "emotion_response": "1-2 sentence emotional reaction referencing a specific concept element.",
+      "gut_check": "RED"
     }}
   ]
 }}
 """.strip()
-
 
 # =========================================================
 # ------------------- PROMPT HELPERS ----------------------
@@ -2311,9 +2615,32 @@ def generate_emotion_data(personas: List[Dict[str, Any]], assets: List[Dict[str,
     if not emotion_prompt or not emotion_prompt.strip():
         emotion_prompt = DEFAULT_EMOTION_PROMPT
 
+    tpp_summary = """
+# Pentesto® TPP
+
+| | |
+|---|---|
+| **Indication** | Pentesto® (sacubitril/valsartan) is indicated to reduce the risk of cardiovascular death and hospitalization for heart failure in adult patients with chronic heart failure. Benefit is most evident in patients with LVEF below normal. Pediatric indication: symptomatic HF with systemic LV systolic dysfunction in patients ≥1 year. |
+| **MOA** | First-in-class Angiotensin Receptor–Neprilysin Inhibitor (ARNI). Sacubitril inhibits neprilysin, augmenting protective natriuretic peptides (BNP, ANP, CNP). Valsartan blocks the angiotensin II type-1 receptor, suppressing maladaptive RAAS signaling. Dual-pathway action rebalances both harmful and protective neurohormonal systems — legacy ACEi/ARB addresses only one arm. |
+| **Study Population** | 14,500+ patients across 4 Phase III RCTs spanning the LVEF spectrum: HFrEF (PARADIGM-HF, n=8,442), in-hospital ADHF (PIONEER-HF, n=881), HFpEF (PARAGON-HF, n=4,796), post-worsening HFmrEF/HFpEF (PARAGLIDE-HF, n=466). NYHA II–IV, elevated NT-proBNP, on background GDMT. |
+| **Efficacy** | **Primary (PARADIGM-HF vs. enalapril, HFrEF):**<br>• 20% RRR in CV death (13.3% vs. 16.5%; p<0.001)<br>• 21% RRR in HF hospitalization (12.8% vs. 15.6%; p<0.001)<br>• 16% reduction in all-cause mortality (17.0% vs. 19.8%; p=0.0009)<br>• Composite endpoint HR 0.80; p<0.0001 — trial stopped early for efficacy<br><br>**Secondary / supporting:**<br>• 29% greater NT-proBNP reduction at Weeks 4–8 vs. enalapril<br>• 35% less decline in KCCQ-23 QoL score at 8 months<br>• PIONEER-HF: superior in-hospital NT-proBNP reduction; >80% persistence at 12 months when initiated pre-discharge<br>• PROVE-HF: ~7–8% absolute LVEF increase at 6–12 months (reverse remodeling)<br>• PARAGON-HF (HFpEF): primary narrowly missed (HR 0.87; p=0.059); exploratory benefit in lower-EF and female subgroups<br>• PARAGLIDE-HF: 15% greater NT-proBNP reduction vs. valsartan in post-worsening HFmrEF/HFpEF<br><br>**Guideline status:** AHA/ACC/HFSA Class I, Level A — preferred neurohormonal backbone of 4-pillar GDMT (ARNI + β-blocker + MRA + SGLT2i); 4-pillar combination reduces CV death/HF hosp by ~62% vs. ACEi+BB. |
+| **Administration** | Oral, twice daily. Three strengths: 24/26, 49/51, 97/103 mg. Standard start 49/51 mg BID (if on moderate–high dose ACEi/ARB); reduced start 24/26 mg BID (treatment-naïve, low-dose, eGFR <30, or moderate hepatic impairment). Titrate every 2–4 weeks to target 97/103 mg BID. **Mandatory 36-hour washout from ACEi** (angioedema risk); no washout needed from ARB. No food restrictions; no routine coagulation monitoring. |
+| **Safety / Tolerability** | **Boxed Warning:** Fetal toxicity — discontinue when pregnancy detected.<br>**Contraindications:** Concomitant ACEi (within 36 hrs); prior ACEi/ARB-related angioedema; concomitant aliskiren in diabetes.<br>**Warnings:** Hypotension, angioedema, hyperkalemia, renal impairment.<br>**Common AEs (≥5%):** Hypotension, hyperkalemia, cough, dizziness, renal lab abnormalities.<br>**Tolerability edge:** Fewer AE-driven discontinuations vs. enalapril; renal outcomes favorable vs. enalapril (fewer significant creatinine elevations); in-hospital initiation AE profile comparable to standard therapy. |
+| **Cost / Access** | Branded Pentesto®: Commercial Tier 2–3 (PA common); Medicare Part D Tier 3–4. **Generic sacubitril/valsartan available since July 2025**, bioequivalent and increasingly formulary-preferred. Branded differentiation now anchored in service, persistence programs, and educational ecosystem — affordability is no longer the prescribing barrier. |
+
+---
+*Confidential — for internal concepting and persona-evaluation use only. Not promotional.*
+    """
+
     prompt = _safe_format_map(emotion_prompt, {
         "asset_text": asset_text,
-        "persona_text": persona_text
+        "persona_text": persona_text,
+        "personas_str": persona_text,
+        "tpp_summary": tpp_summary,
+        "len_personas": len(personas),
+        "asset_name": assets[0].get('name', 'Asset 1') if assets else 'Asset 1',
+        "image_descriptor": assets[0].get('image_descriptor', '') if assets else '',
+        "asset_id": assets[0].get('id', 'asset_1') if assets else 'asset_1',
     })
     print(f"prompt with text --> {prompt}")
     
@@ -2333,21 +2660,33 @@ def generate_emotion_data(personas: List[Dict[str, Any]], assets: List[Dict[str,
             f"expected_cells={expected_cells} token_budget={token_budget}"
         )
         result = _chat_json_synthetic(messages, max_completion_tokens=token_budget)
+        print(f"result : {result}")
         if "error" in result:
             logger.error(f"[synthetic] emotion data generation failed: {result['error']}")
             return []
 
-        emotion_data = result.get("emotion_data", [])
+        emotion_data = []
+        # Support the new prompt format where average_emotion is inside aggregated
+        if "aggregated" in result:
+            aggregated = result["aggregated"]
+            for asset_id, data in aggregated.items():
+                if isinstance(data, dict) and "average_emotion" in data:
+                    emotion_data.append(data["average_emotion"])
+
+        # Fallback to the old prompt format
+        if not emotion_data:
+            emotion_data = result.get("emotion_data", [])
+
         if not emotion_data:
             logger.warning(
                 f"[synthetic] emotion_data is empty. "
                 f"LLM returned keys: {list(result.keys())}. "
-                f"Expected {expected_cells} entries."
+                f"Expected {expected_cells} entries (or aggregated data)."
             )
         else:
             logger.info(
                 f"[synthetic] emotion_data generated: "
-                f"{len(emotion_data)} entries (expected {expected_cells})"
+                f"{len(emotion_data)} entries"
             )
         return emotion_data
     except Exception as e:
@@ -2586,7 +2925,21 @@ def analyze_single_asset_all_personas_one_shot(
     asset_name = asset.get("name", "Unnamed Asset")
     asset_text = asset.get("text", "")
     image_descriptor = asset.get("image_descriptor", "")
-    
+    tpp_summary = """
+    # Pentesto® TPP
+| | |
+|---|---|
+| **Indication** | Pentesto® (sacubitril/valsartan) is indicated to reduce the risk of cardiovascular death and hospitalization for heart failure in adult patients with chronic heart failure. Benefit is most evident in patients with LVEF below normal. Pediatric indication: symptomatic HF with systemic LV systolic dysfunction in patients ≥1 year. |
+| **MOA** | First-in-class Angiotensin Receptor–Neprilysin Inhibitor (ARNI). Sacubitril inhibits neprilysin, augmenting protective natriuretic peptides (BNP, ANP, CNP). Valsartan blocks the angiotensin II type-1 receptor, suppressing maladaptive RAAS signaling. Dual-pathway action rebalances both harmful and protective neurohormonal systems — legacy ACEi/ARB addresses only one arm. |
+| **Study Population** | 14,500+ patients across 4 Phase III RCTs spanning the LVEF spectrum: HFrEF (PARADIGM-HF, n=8,442), in-hospital ADHF (PIONEER-HF, n=881), HFpEF (PARAGON-HF, n=4,796), post-worsening HFmrEF/HFpEF (PARAGLIDE-HF, n=466). NYHA II–IV, elevated NT-proBNP, on background GDMT. |
+| **Efficacy** | **Primary (PARADIGM-HF vs. enalapril, HFrEF):**<br>• 20% RRR in CV death (13.3% vs. 16.5%; p<0.001)<br>• 21% RRR in HF hospitalization (12.8% vs. 15.6%; p<0.001)<br>• 16% reduction in all-cause mortality (17.0% vs. 19.8%; p=0.0009)<br>• Composite endpoint HR 0.80; p<0.0001 — trial stopped early for efficacy<br><br>**Secondary / supporting:**<br>• 29% greater NT-proBNP reduction at Weeks 4–8 vs. enalapril<br>• 35% less decline in KCCQ-23 QoL score at 8 months<br>• PIONEER-HF: superior in-hospital NT-proBNP reduction; >80% persistence at 12 months when initiated pre-discharge<br>• PROVE-HF: ~7–8% absolute LVEF increase at 6–12 months (reverse remodeling)<br>• PARAGON-HF (HFpEF): primary narrowly missed (HR 0.87; p=0.059); exploratory benefit in lower-EF and female subgroups<br>• PARAGLIDE-HF: 15% greater NT-proBNP reduction vs. valsartan in post-worsening HFmrEF/HFpEF<br><br>**Guideline status:** AHA/ACC/HFSA Class I, Level A — preferred neurohormonal backbone of 4-pillar GDMT (ARNI + β-blocker + MRA + SGLT2i); 4-pillar combination reduces CV death/HF hosp by ~62% vs. ACEi+BB. |
+| **Administration** | Oral, twice daily. Three strengths: 24/26, 49/51, 97/103 mg. Standard start 49/51 mg BID (if on moderate–high dose ACEi/ARB); reduced start 24/26 mg BID (treatment-naïve, low-dose, eGFR <30, or moderate hepatic impairment). Titrate every 2–4 weeks to target 97/103 mg BID. **Mandatory 36-hour washout from ACEi** (angioedema risk); no washout needed from ARB. No food restrictions; no routine coagulation monitoring. |
+| **Safety / Tolerability** | **Boxed Warning:** Fetal toxicity — discontinue when pregnancy detected.<br>**Contraindications:** Concomitant ACEi (within 36 hrs); prior ACEi/ARB-related angioedema; concomitant aliskiren in diabetes.<br>**Warnings:** Hypotension, angioedema, hyperkalemia, renal impairment.<br>**Common AEs (≥5%):** Hypotension, hyperkalemia, cough, dizziness, renal lab abnormalities.<br>**Tolerability edge:** Fewer AE-driven discontinuations vs. enalapril; renal outcomes favorable vs. enalapril (fewer significant creatinine elevations); in-hospital initiation AE profile comparable to standard therapy. |
+| **Cost / Access** | Branded Pentesto®: Commercial Tier 2–3 (PA common); Medicare Part D Tier 3–4. **Generic sacubitril/valsartan available since July 2025**, bioequivalent and increasingly formulary-preferred. Branded differentiation now anchored in service, persistence programs, and educational ecosystem — affordability is no longer the prescribing barrier. |
+
+---
+*Confidential — for internal concepting and persona-evaluation use only. Not promotional.*
+    """
     # 1. Prepare image
     image_data = None
     mime = "image/png"
@@ -2612,58 +2965,143 @@ def analyze_single_asset_all_personas_one_shot(
     personas_str = "\n\n".join(persona_texts)
     
     # 3. Create prompt
-    prompt = f"""You are an expert AI persona simulator and medical marketing analyst.
-You are evaluating a pharmaceutical marketing asset named "{asset_name}" on behalf of {len(personas)} different healthcare professional personas.
+    prompt = f"""
+    You are simulating multiple HCP personas reacting to a pharmaceutical marketing concept at first viewing.
 
-**MARKETING ASSET:**
-Name: {asset_name}
-Description: {image_descriptor}
-Text: {asset_text}
+    SYSTEM ROLE
+    You are an expert AI persona simulator and medical marketing analyst.
 
-**PERSONAS:**
-{personas_str}
+    You are evaluating a pharmaceutical marketing asset named "{asset_name}" on behalf of {len(personas)} different healthcare professional personas.
 
-**TASK:**
-You must simulate EACH persona's reaction to the asset INTERNALLY without outputting them.
-Do NOT output the individual persona results. 
-Instead, ONLY calculate and output the AVERAGE/AGGREGATED results for the entire group.
+    CONCEPT-STAGE SCOPE
+    All personas have already been briefed on the product via the TPP.
+    They already know the indication, mechanism, efficacy, safety, dosing, and target patient profile.
 
-To do this, internally determine each persona's score (1-7), rationale, and emotional response, and then calculate the AGGREGATED results across all personas:
-1. "average_scores": The mathematical average of the 1-7 scores for each metric across all personas.
-2. "average_rationale": Synthesize the individual rationales into a single 2-3 sentence consensus rationale for each metric.
-3. "average_preference": An overall preference score (0-100) rounded to 1 decimal place. (Formula: ((Average of the 5 metrics) - 1) / 6 * 100).
-4. "average_emotion": Synthesize the individual emotional responses into one overall "emotion_response" and determine an overall "gut_check" (GREEN/YELLOW/RED) for the group.
+    They are NOT reacting to a sales aid or detail piece.
+    They are reacting to an early creative idea — metaphor, headline, visual, tone, and emotional framing.
 
-Return ONLY a valid JSON object with the following structure:
-{{
-  "aggregated": {{
-    "{asset.get('id', 'asset_1')}": {{
-      "asset_name": "{asset_name}",
-      "average_scores": {{
-        "motivation_to_prescribe": <float>,
-        "connection_to_story": <float>,
-        "differentiation": <float>,
-        "believability": <float>,
-        "stopping_power": <float>
-      }},
-      "average_rationale": {{
-        "motivation_to_prescribe": "<string>",
-        "connection_to_story": "<string>",
-        "differentiation": "<string>",
-        "believability": "<string>",
-        "stopping_power": "<string>"
-      }},
-      "average_preference": <float>,
-      "respondent_count": {len(personas)},
-      "average_emotion": {{
-        "concept_name": "{asset_name}",
-        "emotion_response": "<string>",
-        "gut_check": "<string>"
+    Therefore:
+    - Do NOT generate reactions focused on missing data, citations, endpoints, comparators, dosing, or proof points.
+    - Do NOT critique missing trial evidence.
+    - DO evaluate the creative territory, metaphor, tagline, tone, emotional framing, and strategic consistency with the TPP.
+
+    INPUT
+
+    TPP Summary:
+    {tpp_summary}
+
+    MARKETING ASSET:
+    Name: {asset_name}
+    Description: {image_descriptor}
+    Text: {asset_text}
+
+    PERSONAS:
+    {personas_str}
+
+    TASK
+
+    You must simulate EACH persona's reaction INTERNALLY without outputting the individual persona results.
+
+    For each persona internally determine:
+    - emotional reaction
+    - considered reaction
+    - gut check (GREEN / YELLOW / RED)
+    - creative strengths and weaknesses
+    - metric scores (1-7)
+
+    Then calculate ONLY the AGGREGATED group-level output.
+
+    SCORING DIMENSIONS
+    Use these scoring dimensions internally:
+    1. motivation_to_prescribe
+    2. connection_to_story
+    3. differentiation
+    4. believability
+    5. stopping_power
+
+    AGGREGATED OUTPUT RULES
+
+    1. "average_scores"
+    Calculate the mathematical average across all personas for each metric.
+
+    2. "average_rationale"
+    Generate a 2-3 sentence consensus rationale for each metric.
+    These rationales should reflect:
+    - emotional first impressions
+    - reaction to metaphor/tagline/visual
+    - creative effectiveness
+    - segment alignment
+    - tone consistency
+    NOT requests for proof/data.
+
+    3. "average_preference"
+    Formula:
+    ((Average of the 5 metrics) - 1) / 6 * 100
+
+    Round to 1 decimal place.
+
+    4. "average_emotion"
+    Synthesize the emotional reactions into:
+    - one overall emotional_response
+    - one overall gut_check
+
+    GUT CHECK DEFINITIONS
+    - GREEN = Concept works well and drives further engagement
+    - YWLLOW = Interesting but blocked by a creative issue
+    - RED = Disengaging because of tone/metaphor/strategy mismatch
+
+    FLIP TRIGGER LOGIC
+    Internally determine what creative changes would improve weak reactions,
+    but DO NOT output persona-level flip triggers.
+
+    BANNED LANGUAGE
+    Avoid:
+    - "resonates emotionally"
+    - "evokes"
+    - "speaks to the heart"
+
+    BANNED REACTIONS
+    Do NOT mention:
+    - missing endpoints
+    - citations
+    - comparator requests
+    - dosing details
+    - safety details
+    - mechanism explanations
+
+    OUTPUT FORMAT
+
+    Return ONLY a valid JSON object with the following structure:
+
+    {{
+      "aggregated": {{
+        "{asset.get('id', 'asset_1')}": {{
+          "asset_name": "{asset_name}",
+          "average_scores": {{
+            "motivation_to_prescribe": <float>,
+            "connection_to_story": <float>,
+            "differentiation": <float>,
+            "believability": <float>,
+            "stopping_power": <float>
+          }},
+          "average_rationale": {{
+            "motivation_to_prescribe": "<string>",
+            "connection_to_story": "<string>",
+            "differentiation": "<string>",
+            "believability": "<string>",
+            "stopping_power": "<string>"
+          }},
+          "average_preference": <float>,
+          "respondent_count": {len(personas)},
+          "average_emotion": {{
+            "concept_name": "{asset_name}",
+            "emotion_response": "<string>",
+            "gut_check": "<GREEN | YELLOW | RED>"
+          }}
+        }}
       }}
     }}
-  }}
-}}
-"""
+    """
 
     messages = [{"role": "user", "content": [{"type": "text", "text": prompt}]}]
     if image_data:
