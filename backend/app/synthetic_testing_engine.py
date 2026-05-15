@@ -1755,31 +1755,67 @@ Return ONLY valid JSON.
   "confidence": <1-7 float>
 }""".strip()
 
-DEFAULT_EMOTION_PROMPT = """You are an expert AI persona simulator and medical marketing analyst. Your task is to evaluate marketing concepts/images through the lens of specific Healthcare Professional (HCP) personas.
+DEFAULT_EMOTION_PROMPT = """
+You are simulating multiple HCP personas reacting to a pharmaceutical marketing concept at first viewing.
 
-Instead of generating long-form text, you must output a structured matrix called "Emotional Response". In this matrix, Concepts must be the rows, and Personas must be the columns.
+SYSTEM ROLE
+You are an expert AI persona simulator and medical marketing analyst.
 
-For each "cell" (the intersection of a Concept and a Persona), generate two specific data points:
-Emotional Response: A concise, 1-2 sentence description of the persona's immediate psychological and emotional reaction to the visual and copy.
-Gut Check: An immediate RAG status indicating their overall receptiveness:
-   - GREEN: Positive reaction, feels aligned, trusting, and ready to engage.
-   - YELLOW: Mixed reaction, feels intrigued but hesitant, requires more data or clarification.
-   - RED: Negative reaction, feels alienated, skeptical, confused, or dismissive.
+You are evaluating a pharmaceutical marketing asset named "{asset_name}" on behalf of {len_personas} different healthcare professional personas.
+
+CONCEPT-STAGE SCOPE
+All personas have already been briefed on the product via the TPP.
+They already know the indication, mechanism, efficacy, safety, dosing, and target patient profile.
+
+They are NOT reacting to a sales aid or detail piece.
+They are reacting to an early creative idea — metaphor, headline, visual, tone, and emotional framing.
+
+Therefore:
+- Do NOT generate reactions focused on missing data, citations, endpoints, comparators, dosing, or proof points.
+- Do NOT critique missing trial evidence.
+- DO evaluate the creative territory, metaphor, tagline, tone, emotional framing, and strategic consistency with the TPP.
+
+INPUT
 
 TPP Summary:
 {tpp_summary}
 
-Input Data:
-Concepts to evaluate (Rows):
-{asset_text}
+MARKETING ASSET:
+Name: {asset_name}
+Description: {image_descriptor}
+Text: {asset_text}
 
-Personas to simulate (Columns):
-{persona_text}
+PERSONAS:
+{personas_str}
 
-Output format:
-Return ONLY a valid JSON object with a single key "emotion_data" which is an array. Each object in the array represents the evaluation of a single Concept by a single Persona. Do not include introductory text or markdown formatting outside of the JSON block.
+TASK
 
-Use this exact JSON schema:
+For each persona, simulate their immediate emotional reaction and gut check to each marketing concept.
+Output one entry per Concept × Persona combination.
+
+GUT CHECK DEFINITIONS
+- GREEN = Concept works well and drives further engagement
+- YELLOW = Interesting but blocked by a creative issue
+- RED = Disengaging because of tone/metaphor/strategy mismatch
+
+BANNED LANGUAGE
+Avoid:
+- "resonates emotionally"
+- "evokes"
+- "speaks to the heart"
+
+BANNED REACTIONS
+Do NOT mention:
+- missing endpoints
+- citations
+- comparator requests
+- dosing details
+- safety details
+- mechanism explanations
+
+OUTPUT FORMAT
+
+Return ONLY a valid JSON object with the following structure:
 
 {{
   "emotion_data": [
@@ -1787,14 +1823,14 @@ Use this exact JSON schema:
       "concept_name": "Name of the image/concept",
       "persona_name": "Persona Name",
       "persona_subtype": "Persona Subtype",
-      "emotion_response": "1-2 sentence emotional reaction.",
+      "emotion_response": "1-2 sentence emotional reaction referencing a specific concept element.",
       "gut_check": "GREEN"
     }},
     {{
       "concept_name": "Name of the image/concept",
       "persona_name": "Another Persona Name",
       "persona_subtype": "Persona Subtype",
-      "emotion_response": "1-2 sentence emotional reaction.",
+      "emotion_response": "1-2 sentence emotional reaction referencing a specific concept element.",
       "gut_check": "RED"
     }}
   ]
