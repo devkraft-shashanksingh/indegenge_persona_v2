@@ -119,6 +119,20 @@ async def synthetic_testing_analyze(
 
 @router.post("/emotion-aggregate/v1", response_model=schemas.EmotionResponse)
 async def get_emotion_response(request: schemas.EmotionRequestionModel, db: Session = Depends(get_db)):
+    if request.id:
+        db_emotion_agg = db.query(models.EmotionAggregate).filter(
+            models.EmotionAggregate.image_uuid == request.id
+        ).order_by(models.EmotionAggregate.created_at.desc()).first()
+        
+        if db_emotion_agg and db_emotion_agg.output_data:
+            out_data = db_emotion_agg.output_data
+            return schemas.EmotionResponse(
+                id=request.id,
+                image_url=request.image_url,
+                emotional_data=out_data.get("emotional_data"),
+                aggregated=out_data.get("aggregated")
+            )
+
     # 1. Fetch all personas
     all_personas_db = crud.get_personas(db, limit=1000)
     personas = []
@@ -208,17 +222,18 @@ async def get_emotion_response(request: schemas.EmotionRequestionModel, db: Sess
         aggregated=asset_1_agg
     )
 
-    try:
-        db_emotion_agg = models.EmotionAggregate(
-            image_uuid=request.id,
-            image_url=request.image_url,
-            input_data=request.dict(),
-            output_data=emotion_response_data.dict()
-        )
-        db.add(db_emotion_agg)
-        db.commit()
-    except Exception as e:
-        print(f"Failed to save EmotionAggregate: {str(e)}")
-        db.rollback()
+    if request.id:
+        try:
+            db_emotion_agg = models.EmotionAggregate(
+                image_uuid=request.id,
+                image_url=request.image_url,
+                input_data=request.dict(),
+                output_data=emotion_response_data.dict()
+            )
+            db.add(db_emotion_agg)
+            db.commit()
+        except Exception as e:
+            print(f"Failed to save EmotionAggregate: {str(e)}")
+            db.rollback()
 
     return emotion_response_data
